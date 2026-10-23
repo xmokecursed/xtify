@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/playlist_model.dart';
 import '../models/track_model.dart';
+import '../services/artist_mix_service.dart';
 import '../services/download_service.dart';
+import '../services/history_service.dart';
 import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
 import 'media_tile.dart';
@@ -231,6 +233,24 @@ Future<void> showTrackOptions(BuildContext context, Track track) {
                 Navigator.pop(sheetContext);
                 if (context.mounted) showAddToPlaylistSheet(context, track);
               },
+            ),
+            ValueListenableBuilder<List<Track>>(
+              valueListenable: HistoryService.instance.tracks,
+              builder: (context, _, _) => HistoryService.instance.contains(track.id)
+                  ? ListTile(
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+                      leading: const Icon(Icons.history_toggle_off),
+                      title: const Text('Remove from history'),
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        await HistoryService.instance.remove(track.id);
+                        await ArtistMixService.instance.forget(track.id);
+                        messenger.showSnackBar(
+                            const SnackBar(content: Text('Removed from history')));
+                      },
+                    )
+                  : const SizedBox.shrink(),
             ),
             ListenableBuilder(
               listenable: Listenable.merge([

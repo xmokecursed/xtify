@@ -83,15 +83,49 @@ class HistoryService {
     final name = t.artist.trim();
     if (name.isNotEmpty) _countArtist(name, t.imageUrl);
 
+    await _persist();
+  }
+
+  Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
       _key,
-      list.map((x) => json.encode(x.toJson())).toList(),
+      tracks.value.map((x) => json.encode(x.toJson())).toList(),
     );
     await prefs.setStringList(
       _artistKey,
       artists.value.map((a) => json.encode(a.toJson())).toList(),
     );
+  }
+
+  bool contains(String trackId) => tracks.value.any((t) => t.id == trackId);
+
+  /// Takes one song out of the history. The history only keeps one entry per song,
+  /// so the artist loses one play (and disappears when that was their last).
+  Future<void> remove(String trackId) async {
+    final i = tracks.value.indexWhere((t) => t.id == trackId);
+    if (i < 0) return;
+    final t = tracks.value[i];
+    tracks.value = [...tracks.value]..removeAt(i);
+
+    final name = t.artist.trim().toLowerCase();
+    if (name.isNotEmpty) {
+      final list = <ArtistEntry>[];
+      for (final a in artists.value) {
+        if (a.name.toLowerCase() != name) {
+          list.add(a);
+        } else if (a.plays > 1) {
+          list.add(ArtistEntry(
+            name: a.name,
+            plays: a.plays - 1,
+            lastPlayedMs: a.lastPlayedMs,
+            imageUrl: a.imageUrl,
+          ));
+        } // plays <= 1: the artist is dropped
+      }
+      artists.value = _sorted(list);
+    }
+    await _persist();
   }
 
   void _countArtist(String name, String imageUrl) {
