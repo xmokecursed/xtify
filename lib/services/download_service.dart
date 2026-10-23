@@ -66,6 +66,14 @@ class DownloadTask {
           error: error);
 }
 
+/// A finished (or failed) download, for the "Saved" / "Failed" banner.
+class DownloadEvent {
+  final Track track;
+  final bool ok;
+  final int seq; // changes on every event so the same song can fire twice
+  const DownloadEvent(this.track, this.ok, this.seq);
+}
+
 class _Cancelled implements Exception {}
 
 /// Saves songs as audio files and keeps the built-in "Downloads" playlist in step.
@@ -86,6 +94,10 @@ class DownloadService {
   /// trackId -> waiting / running / failed download.
   final ValueNotifier<Map<String, DownloadTask>> tasks =
       ValueNotifier<Map<String, DownloadTask>>(const {});
+
+  /// The latest finished or failed download.
+  final ValueNotifier<DownloadEvent?> lastEvent = ValueNotifier<DownloadEvent?>(null);
+  int _eventSeq = 0;
 
   /// Folder new downloads go to (for showing in the UI).
   final ValueNotifier<String> folder = ValueNotifier<String>('');
@@ -279,11 +291,13 @@ class DownloadService {
         try {
           await _download(task.track);
           _setTask(id, null);
+          lastEvent.value = DownloadEvent(task.track, true, ++_eventSeq);
         } on _Cancelled {
           _setTask(id, null);
         } catch (e) {
           debugPrint('download failed for ${task.track.id}: $e');
           _setTask(id, task.copy(status: DownloadStatus.failed, error: '$e'));
+          lastEvent.value = DownloadEvent(task.track, false, ++_eventSeq);
         } finally {
           _cancelled.remove(id);
         }
@@ -366,34 +380,53 @@ class DownloadService {
       raf = await part.open(mode: FileMode.write);
       int? total = int.tryParse(uri.queryParameters['clen'] ?? '');
       var pos = 0;
+      void report(int at) {
+        final tot = total;
+        if (tot == null || tot <= 0) return;
+        final p = (at / tot).clamp(0.0, 1.0);
+        if (p - lastShown >= 0.005) {
+          lastShown = p;
+          final cur = tasks.value[t.id];
+          if (cur != null) _setTask(t.id, cur.copy(progress: p));
+        }
+      }
+
       while (true) {
         if (_cancelled.contains(t.id)) throw _Cancelled();
         final end = (total != null ? min(pos + _chunk, total) : pos + _chunk) - 1;
-        final res = await client
-            .get(uri, headers: {...r.headers, 'Range': 'bytes=$pos-$end'})
-            .timeout(const Duration(seconds: 30));
+        final req = http.Request('GET', uri)
+          ..headers.addAll({...r.headers, 'Range': 'bytes=$pos-$end'});
+        final res = await client.send(req).timeout(const Duration(seconds: 30));
+        if (res.statusCode != 200 && res.statusCode != 206) {
+          await res.stream.drain<void>();
+          throw Exception('HTTP ${res.statusCode}');
+        }
+        if (res.statusCode == 200 && pos != 0) {
+          await res.stream.drain<void>();
+          throw Exception('server ignored the range');
+        }
         if (res.statusCode == 200) {
-          // the server ignored the range and sent everything
-          if (pos != 0) throw Exception('server ignored the range');
-          await raf.writeFrom(res.bodyBytes);
-          pos = res.bodyBytes.length;
+          // the server ignored the range and sends everything
+          total ??= res.contentLength;
+        } else {
+          total ??= int.tryParse(res.headers['content-range']?.split('/').last ?? '');
+        }
+        var got = 0;
+        await for (final bytes in res.stream.timeout(const Duration(seconds: 30))) {
+          if (_cancelled.contains(t.id)) throw _Cancelled();
+          await raf.writeFrom(bytes);
+          got += bytes.length;
+          report(pos + got); // smooth progress: updates as the bytes arrive
+        }
+        if (got == 0) throw Exception('empty chunk');
+        pos += got;
+        if (res.statusCode == 200) {
           total = pos;
           break;
         }
-        if (res.statusCode != 206) throw Exception('HTTP ${res.statusCode}');
-        if (res.bodyBytes.isEmpty) throw Exception('empty chunk');
-        total ??= int.tryParse(res.headers['content-range']?.split('/').last ?? '');
-        await raf.writeFrom(res.bodyBytes);
-        pos += res.bodyBytes.length;
         if (total != null) {
-          final p = pos / total;
-          if (p - lastShown >= 0.01) {
-            lastShown = p;
-            final cur = tasks.value[t.id];
-            if (cur != null) _setTask(t.id, cur.copy(progress: p.clamp(0.0, 1.0)));
-          }
           if (pos >= total) break;
-        } else if (res.bodyBytes.length < _chunk) {
+        } else if (got < _chunk) {
           break; // size unknown: a short chunk is the end
         }
       }

@@ -86,7 +86,11 @@ class PlaylistScreen extends StatelessWidget {
           body: Stack(
             children: [
               p.tracks.isEmpty
-                  ? Center(
+                  ? Column(
+                      children: [
+                        if (isDownloads) ...const [DownloadFolderTile(), DownloadQueueSection()],
+                        Expanded(
+                          child: Center(
                       child: Padding(
                         padding: const EdgeInsets.all(32),
                         child: Text(
@@ -100,10 +104,14 @@ class PlaylistScreen extends StatelessWidget {
                               fontSize: 15, color: AppColors.textSecondary),
                         ),
                       ),
+                    ),
+                        ),
+                      ],
                     )
                   : Column(
                       children: [
                         if (isDownloads) const DownloadFolderTile(),
+                        if (isDownloads) const DownloadQueueSection(),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(
                               AppSpacing.screen, 8, AppSpacing.screen, 12),
