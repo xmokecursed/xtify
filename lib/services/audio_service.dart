@@ -3,6 +3,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/track_model.dart';
 import '../services/audio_url_resolver.dart';
+import '../services/download_service.dart';
 import '../services/history_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auto_queue_service.dart';
@@ -335,6 +336,16 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
     final errors = <String>[];
 
+    // A song saved on the phone plays from the file: instant, and works offline.
+    final saved = _localUrl(videoId);
+    if (saved != null) {
+      if (await _tryPlay(saved, mediaItem, token, errors, 'downloaded', start: startAt)) {
+        _started(track);
+        return;
+      }
+      if (token != _playToken) return;
+    }
+
     final cached = AudioUrlResolver.cached(videoId);
     if (cached != null) {
       if (await _tryPlay(cached, mediaItem, token, errors, 'cached', start: startAt)) {
@@ -504,7 +515,16 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   }  
   }  
 
+  /// file:// source for a downloaded song, or null when it is not on the phone.
+  ResolvedAudioUrl? _localUrl(String videoId) {
+    final path = DownloadService.instance.localPath(videoId);
+    if (path == null) return null;
+    return ResolvedAudioUrl(url: Uri.file(path).toString(), headers: const {});
+  }
+
   Future<ResolvedAudioUrl?> _resolveForQueue(String videoId) async {    
+    final local = _localUrl(videoId);
+    if (local != null) return local;
     final cached = AudioUrlResolver.cached(videoId);    
     if (cached != null) return cached;    
     // let a song the user is waiting for go first

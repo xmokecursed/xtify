@@ -12,6 +12,7 @@ import 'package:xtify_app/services/cookie_service.dart';
 import 'package:xtify_app/services/cookie_refresh_service.dart';
 import 'package:xtify_app/services/history_service.dart';
 import 'package:xtify_app/services/playlist_service.dart';
+import 'package:xtify_app/services/download_service.dart';
 import 'package:xtify_app/services/feed_service.dart';
 import 'package:xtify_app/services/search_history_service.dart';
 import 'package:xtify_app/theme/app_theme.dart';
@@ -29,6 +30,7 @@ void main() async {
     await AudioUrlResolver.loadPreferred();
     await HistoryService.instance.init();
     await PlaylistService.instance.init();
+    await DownloadService.instance.init(); // after playlists: keeps Downloads in step
     await SearchHistoryService.instance.init();
     await FeedService.instance.init(); // cached lists, instant on screen
     await XtifyAudioHandler.instance.restoreLast(); // last song, paused where you left off

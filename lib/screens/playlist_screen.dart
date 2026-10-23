@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/playlist_model.dart';
 import '../services/audio_service.dart';
+import '../services/download_service.dart';
 import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/download_widgets.dart';
 import '../widgets/player_sheet.dart';
 import '../widgets/playlist_sheets.dart';
 import '../widgets/track_row.dart';
@@ -60,11 +62,18 @@ class PlaylistScreen extends StatelessWidget {
           );
         }
         final isFavourites = p.id == PlaylistService.favouritesId;
+        final isDownloads = p.id == PlaylistService.downloadsId;
         return Scaffold(
           appBar: AppBar(
             title: Text(p.title),
             actions: [
-              if (!isFavourites)
+              if (isDownloads)
+                IconButton(
+                  tooltip: 'Download folder',
+                  icon: const Icon(Icons.folder_outlined),
+                  onPressed: () => showDownloadFolderSheet(context),
+                )
+              else if (!isFavourites)
                 PopupMenuButton<String>(
                   onSelected: (v) => _menu(context, p, v),
                   itemBuilder: (_) => const [
@@ -83,7 +92,9 @@ class PlaylistScreen extends StatelessWidget {
                         child: Text(
                           isFavourites
                               ? 'No favourites yet.\nTap the heart on any song to save it here.'
-                              : 'No songs yet.\nOpen the menu on any song to add it here.',
+                              : isDownloads
+                                  ? 'No downloads yet.\nTap the download icon on any song to save it here.'
+                                  : 'No songs yet.\nOpen the menu on any song to add it here.',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                               fontSize: 15, color: AppColors.textSecondary),
@@ -92,6 +103,7 @@ class PlaylistScreen extends StatelessWidget {
                     )
                   : Column(
                       children: [
+                        if (isDownloads) const DownloadFolderTile(),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(
                               AppSpacing.screen, 8, AppSpacing.screen, 12),
@@ -128,8 +140,10 @@ class PlaylistScreen extends StatelessWidget {
                               return Dismissible(
                                 key: ValueKey('${p.id}-${t.id}'),
                                 direction: DismissDirection.endToStart,
-                                onDismissed: (_) =>
-                                    PlaylistService.instance.removeTrack(p.id, t.id),
+                                // in Downloads, swiping also deletes the saved file
+                                onDismissed: (_) => isDownloads
+                                    ? DownloadService.instance.remove(t.id)
+                                    : PlaylistService.instance.removeTrack(p.id, t.id),
                                 background: Container(
                                   color: AppColors.card,
                                   alignment: Alignment.centerRight,
@@ -139,6 +153,7 @@ class PlaylistScreen extends StatelessWidget {
                                 child: TrackRow(
                                   track: t,
                                   onTap: () => _play(context, p, start: i),
+                                  showDownload: !isDownloads,
                                   showMore: false,
                                 ),
                               );

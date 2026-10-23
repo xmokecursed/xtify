@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/playlist_model.dart';
 import '../models/track_model.dart';
+import '../services/download_service.dart';
 import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
 import 'media_tile.dart';
@@ -229,6 +230,42 @@ Future<void> showTrackOptions(BuildContext context, Track track) {
               onTap: () {
                 Navigator.pop(sheetContext);
                 if (context.mounted) showAddToPlaylistSheet(context, track);
+              },
+            ),
+            ListenableBuilder(
+              listenable: Listenable.merge([
+                DownloadService.instance.items,
+                DownloadService.instance.tasks,
+              ]),
+              builder: (context, _) {
+                final svc = DownloadService.instance;
+                final saved = svc.isDownloaded(track.id);
+                final busy = svc.tasks.value[track.id]?.status == DownloadStatus.queued ||
+                    svc.tasks.value[track.id]?.status == DownloadStatus.active;
+                return ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+                  leading: Icon(saved ? Icons.delete_outline : Icons.download_outlined),
+                  title: Text(saved
+                      ? 'Remove download'
+                      : busy
+                          ? 'Downloading… (tap to cancel)'
+                          : 'Download'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    if (saved) {
+                      svc.remove(track.id);
+                      messenger.showSnackBar(
+                          const SnackBar(content: Text('Download removed')));
+                    } else if (busy) {
+                      svc.cancel(track.id);
+                    } else {
+                      svc.enqueue(track);
+                      messenger.showSnackBar(SnackBar(
+                          content: Text('Downloading "${track.title}"')));
+                    }
+                  },
+                );
               },
             ),
             const SizedBox(height: 8),

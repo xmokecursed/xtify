@@ -51,7 +51,9 @@ class LibraryScreen extends StatelessWidget {
                     imageUrl: p.imageUrl,
                     fallbackIcon: p.id == PlaylistService.favouritesId
                         ? Icons.favorite
-                        : Icons.queue_music,
+                        : p.id == PlaylistService.downloadsId
+                            ? Icons.download_done
+                            : Icons.queue_music,
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(

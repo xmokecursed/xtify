@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'download_widgets.dart';
 import 'favourite_button.dart';
 import 'playlist_sheets.dart';
 import 'package:flutter/material.dart';
@@ -335,7 +336,7 @@ class PlayerSheet extends StatelessWidget {
                         ? const SizedBox(width: 48)
                         : FavouriteButton(track: t, size: 26);
                   }),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   IconButton(
                     icon: const Icon(Icons.skip_previous, size: 28),
                     onPressed: () {
@@ -343,7 +344,7 @@ class PlayerSheet extends StatelessWidget {
                     },
                     color: Colors.white,
                   ),
-                  const SizedBox(width: 24),
+                  const SizedBox(width: 4),
                   IconButton(
                     icon: Icon(
                       playbackState.playing
@@ -360,7 +361,7 @@ class PlayerSheet extends StatelessWidget {
                     },
                     color: Colors.white,
                   ),
-                  const SizedBox(width: 24),
+                  const SizedBox(width: 4),
                   IconButton(
                     icon: const Icon(Icons.skip_next, size: 28),
                     onPressed: () {
@@ -378,6 +379,12 @@ class PlayerSheet extends StatelessWidget {
                     },
                     color: Colors.white,
                   ),
+                  Builder(builder: (context) {
+                    final t = XtifyAudioHandler.instance.currentTrack;
+                    return t == null
+                        ? const SizedBox(width: 48)
+                        : DownloadButton(track: t, size: 26);
+                  }),
                 ],
               );
             },

@@ -45,10 +45,12 @@ class HomeScreen extends StatelessWidget {
             child: ValueListenableBuilder<List<Playlist>>(
               valueListenable: PlaylistService.instance.playlists,
               builder: (context, all, _) {
-                // Favourites only shows up once it has a song in it
+                // Favourites and Downloads only show up once they have a song in them
                 final lists = all
                     .where((p) =>
-                        p.id != PlaylistService.favouritesId || p.tracks.isNotEmpty)
+                        (p.id != PlaylistService.favouritesId &&
+                            p.id != PlaylistService.downloadsId) ||
+                        p.tracks.isNotEmpty)
                     .toList();
                 if (lists.isEmpty) {
                   return const EmptyHint(text: 'Create playlists from the Library tab.');
@@ -64,7 +66,9 @@ class HomeScreen extends StatelessWidget {
                       imageUrl: p.imageUrl,
                       fallbackIcon: p.id == PlaylistService.favouritesId
                           ? Icons.favorite
-                          : Icons.queue_music,
+                          : p.id == PlaylistService.downloadsId
+                              ? Icons.download_done
+                              : Icons.queue_music,
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/track_model.dart';
 import '../theme/app_theme.dart';
+import 'download_widgets.dart';
 import 'favourite_button.dart';
 import 'media_tile.dart';
 import 'play_helper.dart';
@@ -11,6 +12,7 @@ class TrackRow extends StatelessWidget {
   final Track track;
   final VoidCallback? onTap;
   final bool showFavourite;
+  final bool showDownload;
   final bool showMore;
 
   const TrackRow({
@@ -18,6 +20,7 @@ class TrackRow extends StatelessWidget {
     required this.track,
     this.onTap,
     this.showFavourite = true,
+    this.showDownload = true,
     this.showMore = true,
   });
 
@@ -61,6 +64,7 @@ class TrackRow extends StatelessWidget {
               ),
             ),
             if (showFavourite) FavouriteButton(track: track),
+            if (showDownload) DownloadButton(track: track),
             if (showMore)
               IconButton(
                 visualDensity: VisualDensity.compact,

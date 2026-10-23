@@ -13,6 +13,9 @@ class PlaylistService {
   /// Id of the built-in "Favourites" playlist (the hearted songs).
   static const String favouritesId = 'favourites';
 
+  /// Id of the built-in "Downloads" playlist (songs saved on the phone).
+  static const String downloadsId = 'downloads';
+
   final ValueNotifier<List<Playlist>> playlists =
       ValueNotifier<List<Playlist>>(const []);
   File? _file;
@@ -34,22 +37,34 @@ class PlaylistService {
   }
 
   Future<void> _ensureFavourites() async {
-    if (playlists.value.any((p) => p.id == favouritesId)) return;
-    final fav = Playlist(
-      id: favouritesId,
-      title: 'Favourites',
-      imageUrl: '',
-      ownerId: 'local',
-      createdAt: DateTime.now(),
-      tracks: const [],
-    );
-    playlists.value = [fav, ...playlists.value];
+    final list = [...playlists.value];
+    Playlist builtIn(String id, String title) => Playlist(
+          id: id,
+          title: title,
+          imageUrl: '',
+          ownerId: 'local',
+          createdAt: DateTime.now(),
+          tracks: const [],
+        );
+    var changed = false;
+    if (!list.any((p) => p.id == favouritesId)) {
+      list.insert(0, builtIn(favouritesId, 'Favourites'));
+      changed = true;
+    }
+    if (!list.any((p) => p.id == downloadsId)) {
+      final at = list.indexWhere((p) => p.id == favouritesId) + 1;
+      list.insert(at, builtIn(downloadsId, 'Downloads'));
+      changed = true;
+    }
+    if (!changed) return;
+    playlists.value = list;
     await _save();
   }
 
-  /// The user's own playlists (everything except Favourites).
-  List<Playlist> get userPlaylists =>
-      playlists.value.where((p) => p.id != favouritesId).toList();
+  /// The user's own playlists (everything except Favourites and Downloads).
+  List<Playlist> get userPlaylists => playlists.value
+      .where((p) => p.id != favouritesId && p.id != downloadsId)
+      .toList();
 
   bool isFavourite(String trackId) =>
       byId(favouritesId)?.tracks.any((t) => t.id == trackId) ?? false;
@@ -87,12 +102,12 @@ class PlaylistService {
 
   Future<void> rename(String id, String title) async {
     final t = title.trim();
-    if (t.isEmpty || id == favouritesId) return;
+    if (t.isEmpty || id == favouritesId || id == downloadsId) return;
     await _update(id, (p) => _copy(p, title: t));
   }
 
   Future<void> delete(String id) async {
-    if (id == favouritesId) return;
+    if (id == favouritesId || id == downloadsId) return;
     playlists.value = playlists.value.where((p) => p.id != id).toList();
     await _save();
   }
