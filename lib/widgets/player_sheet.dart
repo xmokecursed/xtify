@@ -10,11 +10,63 @@ import 'package:xtify_app/services/cookie_service.dart';
 import 'package:xtify_app/screens/youtube_login_screen.dart';
 import 'package:rxdart/rxdart.dart';
 
-class PlayerSheet extends StatelessWidget {
-  const PlayerSheet({super.key}) : super();
+class PlayerSheet extends StatefulWidget {
+  const PlayerSheet({super.key});
+
+  @override
+  State<PlayerSheet> createState() => _PlayerSheetState();
+}
+
+class _PlayerSheetState extends State<PlayerSheet> {
+  // How far the sheet is pulled up (0.11 = collapsed); the download banner hides when it is open.
+  final ValueNotifier<double> _extent = ValueNotifier<double>(0.11);
+
+  @override
+  void dispose() {
+    _extent.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final collapsed = c.maxHeight.isFinite ? c.maxHeight * 0.11 : 90.0;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            NotificationListener<DraggableScrollableNotification>(
+              onNotification: (n) {
+                _extent.value = n.extent;
+                return false;
+              },
+              child: _sheet(context),
+            ),
+            // Download progress card, floating just above the collapsed mini player
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: collapsed + 8,
+              child: ValueListenableBuilder<double>(
+                valueListenable: _extent,
+                builder: (_, e, child) => IgnorePointer(
+                  ignoring: e > 0.2,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 200),
+                    opacity: e > 0.2 ? 0 : 1,
+                    child: child,
+                  ),
+                ),
+                child: const DownloadBanner(),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _sheet(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: CookieService.instance.signedInListener,
       builder: (context, signedIn, child) {
