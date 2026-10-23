@@ -117,6 +117,7 @@ class ArtistMixService {
     }
     _running = true;
     loading.value = true;
+    var pass = force; // only the first pass is forced, a re-run is a normal refresh
     try {
       do {
         _again = false;
@@ -124,8 +125,8 @@ class ArtistMixService {
           final key = _k(a.name);
           final now = DateTime.now().millisecondsSinceEpoch;
           final have = _cache[key];
-          if (!force && have != null && now - have.updatedAtMs < _ttl.inMilliseconds) continue;
-          if (!force && now - (_failedAt[key] ?? 0) < _retryAfter.inMilliseconds) continue;
+          if (!pass && have != null && now - have.updatedAtMs < _ttl.inMilliseconds) continue;
+          if (!pass && now - (_failedAt[key] ?? 0) < _retryAfter.inMilliseconds) continue;
           final built = await _build(a);
           if (built == null) {
             _failedAt[key] = DateTime.now().millisecondsSinceEpoch;
@@ -134,12 +135,32 @@ class ArtistMixService {
             _publish(); // show each mix as soon as it is ready
           }
         }
+        pass = false;
       } while (_again);
       await _save();
     } finally {
       _running = false;
       loading.value = false;
     }
+  }
+
+  /// Drops a song from every mix (used when the user removes it from their history).
+  Future<void> forget(String trackId) async {
+    var changed = false;
+    for (final k in _cache.keys.toList()) {
+      final m = _cache[k]!;
+      if (!m.tracks.any((t) => t.id == trackId)) continue;
+      changed = true;
+      _cache[k] = ArtistMix(
+        artist: m.artist,
+        imageUrl: m.imageUrl,
+        tracks: m.tracks.where((t) => t.id != trackId).toList(),
+        updatedAtMs: m.updatedAtMs,
+      );
+    }
+    if (!changed) return;
+    _publish();
+    await _save();
   }
 
   /// Songs from the last plays that are by [artist].

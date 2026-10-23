@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/playlist_model.dart';
 import '../models/track_model.dart';
@@ -18,7 +20,14 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final feed = FeedService.instance;
     return RefreshIndicator(
-      onRefresh: () => feed.refreshAll(force: true),
+      // The lists reload in the background (each section shows its own spinner).
+      // Waiting for them here kept the pull-down spinner going for minutes.
+      onRefresh: () async {
+        unawaited(feed.refreshAll(force: true).catchError((Object e) {
+          debugPrint('home refresh failed: $e');
+        }));
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+      },
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
@@ -26,6 +35,7 @@ class HomeScreen extends StatelessWidget {
           SectionSliver(
             title: 'Made for you',
             subtitle: 'A mix for each artist you listen to',
+            trailing: _BusyDot(listenable: ArtistMixService.instance.loading),
             child: ValueListenableBuilder<List<ArtistMix>>(
               valueListenable: ArtistMixService.instance.mixes,
               builder: (_, mixes, _) {
@@ -105,6 +115,7 @@ class HomeScreen extends StatelessWidget {
           SectionSliver(
             title: 'Explore more',
             subtitle: 'Trending on Last.fm',
+            trailing: _BusyDot(listenable: feed.loadingTrending),
             child: ValueListenableBuilder<bool>(
               valueListenable: feed.loadingTrending,
               builder: (_, loading, _) => ValueListenableBuilder<List<Track>>(
@@ -119,6 +130,26 @@ class HomeScreen extends StatelessWidget {
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 120)),
         ],
+      ),
+    );
+  }
+}
+
+/// Small spinner in a section header while that section is reloading.
+class _BusyDot extends StatelessWidget {
+  final ValueListenable<bool> listenable;
+  const _BusyDot({required this.listenable});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: listenable,
+      builder: (_, busy, _) => SizedBox(
+        width: 16,
+        height: 16,
+        child: busy
+            ? const CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)
+            : null,
       ),
     );
   }
