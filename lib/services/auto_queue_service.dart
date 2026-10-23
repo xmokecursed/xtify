@@ -146,6 +146,7 @@ class AutoQueueService {
         for (final t in similar) {
           final secs = _seconds(t.duration);
           if (secs < 60 || secs > 900 || _junk.hasMatch(t.title)) continue;
+          if (t.artist.trim().isEmpty) continue; // an artist-less song would seed the next pick with nothing
           if (_norm(cleanTitle(t.title)) == _norm(title)) continue; // same song again
           found.add(_Candidate(t.artist, t.title, t));
         }
@@ -163,6 +164,7 @@ class AutoQueueService {
         for (final t in await ApiService.getRelated(seed.id)) {
           final secs = _seconds(t.duration);
           if (secs < 60 || secs > 900 || _junk.hasMatch(t.title)) continue;
+          if (t.artist.trim().isEmpty) continue;
           if (_norm(cleanTitle(t.title)) == _norm(title)) continue;
           found.add(_Candidate(t.artist, t.title, t));
           n++;
@@ -261,6 +263,10 @@ class AutoQueueService {
       }
       if (epoch != _epoch) return null;
       if (t == null || _usedIds.contains(t.id)) continue;
+      if (t.artist.trim().isEmpty) {
+        debugPrint('auto-queue: skipped "${c.name}" (${t.id}): no artist');
+        continue; // never queue a song without an artist: the next pick would drift
+      }
       _usedKeys.add(c.key);
       _usedIds.add(t.id);
       debugPrint('auto-queue: picked "${c.artist} - ${c.name}" (${t.id}), ${_pool.length} left');
