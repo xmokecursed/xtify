@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track_model.dart';
 import 'api_service.dart';
+import 'artist_mix_service.dart';
 import 'auto_queue_service.dart';
 import 'history_service.dart';
 import 'track_lookup.dart';
@@ -69,8 +70,8 @@ class FeedService {
   /// Refreshes both feeds one after the other (each song needs a backend search,
   /// so doing both at once would hammer the server).
   Future<void> refreshAll({bool force = false}) async {
-    await refreshMadeForYou(force: force);
     await refreshTrending(force: force);
+    await ArtistMixService.instance.refresh(force: force);
   }
 
   /// Global Last.fm chart, turned into playable songs.

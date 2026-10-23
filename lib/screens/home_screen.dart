@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import '../models/playlist_model.dart';
 import '../models/track_model.dart';
 import '../services/feed_service.dart';
-import '../services/history_service.dart';
+import '../services/artist_mix_service.dart';
 import '../services/playlist_service.dart';
 import '../widgets/layout.dart';
 import '../widgets/media_tile.dart';
 import '../widgets/recently_played.dart';
 import '../widgets/track_carousel.dart';
+import 'artist_mix_screen.dart';
 import 'playlist_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -24,19 +25,39 @@ class HomeScreen extends StatelessWidget {
           const SliverToBoxAdapter(child: ScreenHeader(title: 'Home')),
           SectionSliver(
             title: 'Made for you',
-            subtitle: 'Based on what you listen to',
-            child: ValueListenableBuilder<bool>(
-              valueListenable: feed.loadingMade,
-              builder: (_, loading, _) => ValueListenableBuilder<List<Track>>(
-                valueListenable: feed.madeForYou,
-                builder: (_, tracks, _) => TrackCarousel(
-                  tracks: tracks,
-                  loading: loading,
-                  emptyText: HistoryService.instance.tracks.value.isEmpty
-                      ? "Play a few songs and we'll build this for you."
-                      : 'Pull down to refresh.',
-                ),
-              ),
+            subtitle: 'A mix for each artist you listen to',
+            child: ValueListenableBuilder<List<ArtistMix>>(
+              valueListenable: ArtistMixService.instance.mixes,
+              builder: (_, mixes, _) {
+                if (mixes.isEmpty) {
+                  return ValueListenableBuilder<bool>(
+                    valueListenable: ArtistMixService.instance.loading,
+                    builder: (_, loading, _) => EmptyHint(
+                      text: 'Listen to a few songs by an artist and we\'ll make a mix for them.',
+                      loading: loading,
+                    ),
+                  );
+                }
+                return HList(
+                  height: 200,
+                  itemCount: mixes.length,
+                  itemBuilder: (context, i) {
+                    final m = mixes[i];
+                    return MediaTile(
+                      title: m.title,
+                      subtitle: '${m.tracks.length} songs',
+                      imageUrl: m.imageUrl,
+                      fallbackIcon: Icons.person,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ArtistMixScreen(artist: m.artist),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
           ),
           const SectionSliver(title: 'Recently played', child: RecentlyPlayed()),

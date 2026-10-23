@@ -192,6 +192,19 @@ class ApiService {
         .toList();
   }
 
+  /// Songs by one artist from YouTube Music, matched by exact artist name (backend).
+  static Future<List<Track>> getArtistSongsYtm(String name) async {
+    final uri = Uri.parse(_baseUrl).replace(pathSegments: ['ytm', 'artist', name]);
+    final r = await http.get(uri).timeout(const Duration(seconds: 45));
+    if (r.statusCode != 200) {
+      throw Exception('YouTube Music artist failed (HTTP ${r.statusCode})');
+    }
+    return (json.decode(r.body) as List<dynamic>)
+        .map((e) => Track.fromJson(e as Map<String, dynamic>))
+        .where((t) => t.isPlayable)
+        .toList();
+  }
+
   /// Global Last.fm chart through the backend: [{name, artist}] (no video ids).
   static Future<List<SimilarTrack>> getTrending({int limit = 24, String? country}) async {
     final query = <String, String>{
