@@ -34,6 +34,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   Track? _preloaded; // the song already added to the player as "next"
   bool _preloadedFromUser = false;
   int _prepareEpoch = 0; // bumped whenever what comes next changes
+  DateTime _lastSongStart = DateTime.fromMillisecondsSinceEpoch(0);
   final ValueNotifier<List<Track>> upNextQueue = ValueNotifier<List<Track>>(const []);
   final ValueNotifier<bool> shuffleOn = ValueNotifier<bool>(false);
   final ValueNotifier<XtifyRepeat> repeat = ValueNotifier<XtifyRepeat>(XtifyRepeat.off);
@@ -70,6 +71,12 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     // When the last queued song ends, move on (slow path if nothing was ready)
     _player.processingStateStream.listen((state) {
       if (state == ProcessingState.completed) {
+        // A song cannot have ended seconds after it started: that "completed" is a leftover
+        // of the previous song (it made the new song skip right away).
+        if (DateTime.now().difference(_lastSongStart) < const Duration(seconds: 4)) {
+          debugPrint('player: ignored a stale "completed" right after a song started');
+          return;
+        }
         if (repeat.value == XtifyRepeat.one) {
           _player.seek(Duration.zero).then((_) => _player.play());
           return;
@@ -441,6 +448,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       debugPrint('setAudioSource ($label) took ${sw.elapsedMilliseconds}ms');
       if (token != _playToken) return false;
       _sourceLoaded = true;
+      _lastSongStart = DateTime.now();
       _player.play();
       debugPrint('playing via $label');
       return true;
@@ -592,17 +600,15 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       final item = createMediaItem(next);
       _tracksById[next.id] = next;
       _queuedUrls[next.id] = resolved;
+      await _removeWaiting(); // nothing may be waiting here: never two songs queued
       await _player.addAudioSource(AudioSource.uri(
         Uri.parse(resolved.url),
         headers: resolved.headers.isEmpty ? null : resolved.headers,
         tag: item,
       ));
-      if (token != _playToken) return;
-      if (epoch != _prepareEpoch) {
-        // what comes next changed while this one loaded: take it out again
-        try {
-          await _player.removeAudioSourceAt(_player.sequence.length - 1);
-        } catch (_) {}
+      if (stale()) {
+        // another song started, or what comes next changed, while this one loaded
+        await _removeWaiting();
         return;
       }
       _nextQueued = true;
@@ -611,7 +617,8 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       if (fromUser) _consumeUserHead(next);
       _queue.add([..._queue.value, item]);
       _publishQueue();
-      debugPrint('auto-queue: "${next.title}" ready in ${sw.elapsedMilliseconds}ms');
+      debugPrint('auto-queue: "${next.title}" ready in ${sw.elapsedMilliseconds}ms '
+          '(player has ${_player.sequence.length} source(s), at ${_player.currentIndex})');
     } catch (e) {
       debugPrint('auto-queue failed: ${_short(e)}');
     } finally {
@@ -633,6 +640,20 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     ];
   }
 
+  /// Removes every song waiting after the current one in the player.
+  Future<void> _removeWaiting() async {
+    try {
+      final cur = _player.currentIndex ?? 0;
+      final len = _player.sequence.length;
+      if (len > cur + 1) {
+        debugPrint('player: removing ${len - cur - 1} waiting song(s)');
+        await _player.removeAudioSourceRange(cur + 1, len);
+      }
+    } catch (e) {
+      debugPrint('could not remove the waiting song(s): $e');
+    }
+  }
+
   /// Unloads the song waiting as "next" so that what comes next can change.
   /// A queued song that was waiting goes back to the front of the queue.
   Future<void> _dropPreloaded() async {
@@ -640,12 +661,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     _prepareAttempts = 0;
     _lastPrepareAt = DateTime.fromMillisecondsSinceEpoch(0);
     if (_nextQueued) {
-      final idx = (_player.currentIndex ?? 0) + 1;
-      try {
-        if (idx < _player.sequence.length) await _player.removeAudioSourceAt(idx);
-      } catch (e) {
-        debugPrint('could not unload the next song: $e');
-      }
+      await _removeWaiting();
       final cur = _mediaItem.valueOrNull;
       if (cur != null) _queue.add([cur]);
       _nextQueued = false;
@@ -787,6 +803,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     if (index < 0 || index >= seq.length) return;    
     final item = seq[index].tag as MediaItem?;    
     if (item == null || item.id == _mediaItem.valueOrNull?.id) return;    
+    _lastSongStart = DateTime.now();
     _mediaItem.add(item);    
     _preloaded = null;
     _preloadedFromUser = false;

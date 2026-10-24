@@ -18,6 +18,11 @@ class AutoQueueService {
   final Random _rng = Random();
   final Set<String> _usedIds = {};
   final Set<String> _usedKeys = {};
+  // Songs that really played this session (the two sets above also hold songs that were
+  // only picked). A pick made earlier can turn out to be a song that played in between,
+  // e.g. one the user queued by hand.
+  final Set<String> _playedIds = {};
+  final Set<String> _playedTitles = {};
   List<_Candidate> _pool = [];
   String? _poolSeedId;
   String? _loadedFor;
@@ -69,7 +74,19 @@ class AutoQueueService {
     _usedKeys
       ..clear()
       ..add(_Candidate(seed.artist, cleanTitle(seed.title)).key);
+    _playedIds
+      ..clear()
+      ..add(seed.id);
+    _playedTitles
+      ..clear()
+      ..add(_titleKey(seed.title));
   }
+
+  static String _titleKey(String title) => _norm(cleanTitle(title));
+
+  /// Same video, or the same song title, as something that already played this session.
+  bool _alreadyPlayed(Track t) =>
+      _playedIds.contains(t.id) || _playedTitles.contains(_titleKey(t.title));
 
   /// Playback moved on to [t] by itself (or via next).
   void advanced(Track t) {
@@ -77,6 +94,8 @@ class AutoQueueService {
     // so the radio doesn't drift further away with every hop.
     _usedIds.add(t.id);
     _usedKeys.add(_Candidate(t.artist, cleanTitle(t.title)).key);
+    _playedIds.add(t.id);
+    _playedTitles.add(_titleKey(t.title));
   }
 
   /// Picks the next song in the background so nextFor() answers instantly.
@@ -93,7 +112,14 @@ class AutoQueueService {
     if (epoch != _epoch) return null;
     final f = _nextFuture ?? _choose();
     _nextFuture = null;
-    final t = await f;
+    var t = await f;
+    // the pick may have been made before a song played that is the same one (queued by hand)
+    for (var i = 0; t != null && _alreadyPlayed(t) && i < 3; i++) {
+      debugPrint('auto-queue: dropped "${t.title}" (${t.id}), it already played');
+      if (epoch != _epoch) return null;
+      t = await _choose();
+    }
+    if (t != null && _alreadyPlayed(t)) return null;
     return epoch == _epoch ? t : null;
   }
 
@@ -238,7 +264,10 @@ class AutoQueueService {
     final seen = <String>{};
     // fresh candidates first, then the unused rest of the earlier pool (the reserve)
     _pool = [...found, ..._pool]
-        .where((c) => !_usedKeys.contains(c.key) && seen.add(c.key))
+        .where((c) =>
+            !_usedKeys.contains(c.key) &&
+            !_playedTitles.contains(_titleKey(c.name)) &&
+            seen.add(c.key))
         .toList();
     _loadedFor = seed.id;
     debugPrint('auto-queue: ${_pool.length} candidates for "$artist - $title"');
@@ -250,7 +279,7 @@ class AutoQueueService {
     while (_pool.isNotEmpty && tries < 5) {
       // a little variety: pick among the 5 best matches
       final c = _pool.removeAt(_rng.nextInt(min(_pool.length, 5)));
-      if (_usedKeys.contains(c.key)) continue;
+      if (_usedKeys.contains(c.key) || _playedTitles.contains(_titleKey(c.name))) continue;
       tries++;
       Track? t;
       try {
