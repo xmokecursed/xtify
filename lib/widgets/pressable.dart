@@ -9,6 +9,9 @@ class Pressable extends StatefulWidget {
   final double scale;
   final bool haptic;
 
+  /// Taps closer together than this are ignored (stops double pushes and spam).
+  final Duration debounce;
+
   const Pressable({
     super.key,
     required this.child,
@@ -16,6 +19,7 @@ class Pressable extends StatefulWidget {
     this.onLongPress,
     this.scale = 0.96,
     this.haptic = false,
+    this.debounce = const Duration(milliseconds: 350),
   });
 
   @override
@@ -24,6 +28,7 @@ class Pressable extends StatefulWidget {
 
 class _PressableState extends State<Pressable> {
   bool _down = false;
+  DateTime _lastTap = DateTime.fromMillisecondsSinceEpoch(0);
 
   void _set(bool v) {
     if (_down != v && mounted) setState(() => _down = v);
@@ -39,6 +44,9 @@ class _PressableState extends State<Pressable> {
       onTap: widget.onTap == null
           ? null
           : () {
+              final now = DateTime.now();
+              if (now.difference(_lastTap) < widget.debounce) return;
+              _lastTap = now;
               if (widget.haptic) HapticFeedback.selectionClick();
               widget.onTap!();
             },
