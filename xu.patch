@@ -1,0 +1,839 @@
+diff --git a/lib/main.dart b/lib/main.dart
+index ca436b8..48770f1 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -1,6 +1,7 @@
+ import 'dart:async';
+ 
+ import 'package:flutter/material.dart';
++import 'package:flutter/services.dart';
+ import 'package:audio_service/audio_service.dart';
+ import 'package:xtify_app/screens/home_screen.dart';
+ import 'package:xtify_app/screens/search_screen.dart';
+@@ -116,20 +117,26 @@ class _XtifyHomeState extends State<XtifyHome> {
+           PlayerSheet(),
+         ],
+       ),
+-      bottomNavigationBar: BottomNavigationBar(
+-        currentIndex: _selectedIndex,
+-        onTap: _onItemTapped,
+-        items: const [
+-          BottomNavigationBarItem(
++      bottomNavigationBar: NavigationBar(
++        selectedIndex: _selectedIndex,
++        onDestinationSelected: (i) {
++          HapticFeedback.selectionClick();
++          _onItemTapped(i);
++        },
++        destinations: const [
++          NavigationDestination(
+             icon: Icon(Icons.home_outlined),
++            selectedIcon: Icon(Icons.home_rounded),
+             label: 'Home',
+           ),
+-          BottomNavigationBarItem(
++          NavigationDestination(
+             icon: Icon(Icons.search_outlined),
++            selectedIcon: Icon(Icons.search_rounded),
+             label: 'Search',
+           ),
+-          BottomNavigationBarItem(
++          NavigationDestination(
+             icon: Icon(Icons.library_music_outlined),
++            selectedIcon: Icon(Icons.library_music_rounded),
+             label: 'Library',
+           ),
+         ],
+diff --git a/lib/theme/app_theme.dart b/lib/theme/app_theme.dart
+index c3c8337..eac631d 100644
+--- a/lib/theme/app_theme.dart
++++ b/lib/theme/app_theme.dart
+@@ -2,12 +2,23 @@ import 'package:flutter/material.dart';
+ 
+ class AppColors {
+   static const Color black = Color(0xFF000000);
+-  static const Color surface = Color(0xFF121212);
+-  static const Color card = Color(0xFF1C1C1E);
+-  static const Color border = Color(0xFF2C2C2E);
+-  static const Color textSecondary = Color(0xFF9A9AA0);
++  static const Color surface = Color(0xFF0D0D0D);
++  static const Color card = Color(0xFF171717);
++  static const Color border = Color(0xFF282828);
++  static const Color textSecondary = Color(0xFF8E8E8E);
++
++  /// Black and white only: "accent" is just white.
++  static const Color accent = Colors.white;
+ }
+ 
++/// Uneven corners: big top-left and bottom-right, nearly square on the others.
++BorderRadius asymRadius(double r) => BorderRadius.only(
++      topLeft: Radius.circular(r * 2.2),
++      topRight: Radius.circular(r * 0.35),
++      bottomRight: Radius.circular(r * 2.2),
++      bottomLeft: Radius.circular(r * 0.35),
++    );
++
+ class AppSpacing {
+   /// Left and right padding on every screen.
+   static const double screen = 20;
+@@ -39,6 +50,30 @@ ThemeData buildAppTheme() {
+     canvasColor: AppColors.surface,
+     iconTheme: const IconThemeData(color: Colors.white),
+     dividerColor: AppColors.border,
++    highlightColor: Colors.transparent,
++    pageTransitionsTheme: const PageTransitionsTheme(builders: {
++      TargetPlatform.android: ZoomPageTransitionsBuilder(),
++      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
++    }),
++    navigationBarTheme: NavigationBarThemeData(
++      backgroundColor: AppColors.black,
++      surfaceTintColor: Colors.transparent,
++      indicatorColor: Colors.white.withValues(alpha: 0.14),
++      labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
++      height: 64,
++      iconTheme: WidgetStateProperty.resolveWith((s) => IconThemeData(
++            color: s.contains(WidgetState.selected)
++                ? AppColors.accent
++                : AppColors.textSecondary,
++          )),
++      labelTextStyle: WidgetStateProperty.resolveWith((s) => TextStyle(
++            fontSize: 12,
++            fontWeight: FontWeight.w600,
++            color: s.contains(WidgetState.selected)
++                ? Colors.white
++                : AppColors.textSecondary,
++          )),
++    ),
+     appBarTheme: const AppBarTheme(
+       backgroundColor: AppColors.black,
+       surfaceTintColor: Colors.transparent,
+@@ -52,15 +87,6 @@ ThemeData buildAppTheme() {
+         fontWeight: FontWeight.w700,
+       ),
+     ),
+-    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+-      backgroundColor: AppColors.black,
+-      selectedItemColor: Colors.white,
+-      unselectedItemColor: AppColors.textSecondary,
+-      type: BottomNavigationBarType.fixed,
+-      elevation: 0,
+-      selectedLabelStyle: TextStyle(fontSize: 12),
+-      unselectedLabelStyle: TextStyle(fontSize: 12),
+-    ),
+     textTheme: const TextTheme(
+       bodyLarge: TextStyle(color: Colors.white),
+       bodyMedium: TextStyle(color: AppColors.textSecondary),
+@@ -68,6 +94,7 @@ ThemeData buildAppTheme() {
+         color: Colors.white,
+         fontSize: 20,
+         fontWeight: FontWeight.bold,
++        letterSpacing: -0.4,
+       ),
+       titleMedium: TextStyle(
+         color: Colors.white,
+@@ -80,7 +107,7 @@ ThemeData buildAppTheme() {
+         backgroundColor: Colors.white,
+         foregroundColor: Colors.black,
+         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
++        shape: RoundedRectangleBorder(borderRadius: asymRadius(11)),
+       ),
+     ),
+     outlinedButtonTheme: OutlinedButtonThemeData(
+@@ -88,7 +115,7 @@ ThemeData buildAppTheme() {
+         foregroundColor: Colors.white,
+         side: const BorderSide(color: AppColors.border),
+         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
++        shape: RoundedRectangleBorder(borderRadius: asymRadius(11)),
+       ),
+     ),
+     textButtonTheme: TextButtonThemeData(
+@@ -98,7 +125,10 @@ ThemeData buildAppTheme() {
+       backgroundColor: AppColors.surface,
+       surfaceTintColor: Colors.transparent,
+       shape: RoundedRectangleBorder(
+-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
++        borderRadius: BorderRadius.only(
++          topLeft: Radius.circular(36),
++          topRight: Radius.circular(8),
++        ),
+       ),
+     ),
+     snackBarTheme: SnackBarThemeData(
+@@ -112,7 +142,7 @@ ThemeData buildAppTheme() {
+       color: AppColors.card,
+       surfaceTintColor: Colors.transparent,
+     ),
+-    progressIndicatorTheme: const ProgressIndicatorThemeData(color: Colors.white),
++    progressIndicatorTheme: const ProgressIndicatorThemeData(color: AppColors.accent),
+     listTileTheme: const ListTileThemeData(
+       iconColor: Colors.white,
+       textColor: Colors.white,
+diff --git a/lib/widgets/favourite_button.dart b/lib/widgets/favourite_button.dart
+index 9fdb566..b402e7c 100644
+--- a/lib/widgets/favourite_button.dart
++++ b/lib/widgets/favourite_button.dart
+@@ -1,7 +1,9 @@
+ import 'package:flutter/material.dart';
+ import '../models/playlist_model.dart';
+ import '../models/track_model.dart';
++import 'package:flutter/services.dart';
+ import '../services/playlist_service.dart';
++import '../theme/app_theme.dart';
+ 
+ /// Heart that adds/removes a song from the Favourites playlist.
+ class FavouriteButton extends StatelessWidget {
+@@ -20,9 +22,19 @@ class FavouriteButton extends StatelessWidget {
+         return IconButton(
+           visualDensity: VisualDensity.compact,
+           tooltip: fav ? 'Remove from Favourites' : 'Add to Favourites',
+-          icon: Icon(fav ? Icons.favorite : Icons.favorite_border, size: size),
++          icon: AnimatedSwitcher(
++            duration: const Duration(milliseconds: 220),
++            transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
++            child: Icon(
++              fav ? Icons.favorite : Icons.favorite_border,
++              key: ValueKey(fav),
++              size: size,
++              color: fav ? Colors.white : Colors.white70,
++            ),
++          ),
+           color: Colors.white,
+           onPressed: () async {
++            HapticFeedback.selectionClick();
+             final nowFav = await PlaylistService.instance.toggleFavourite(track);
+             messenger.hideCurrentSnackBar();
+             messenger.showSnackBar(SnackBar(
+diff --git a/lib/widgets/layout.dart b/lib/widgets/layout.dart
+index c511976..7664b0c 100644
+--- a/lib/widgets/layout.dart
++++ b/lib/widgets/layout.dart
+@@ -18,14 +18,15 @@ class ScreenHeader extends StatelessWidget {
+           Text(
+             title,
+             style: const TextStyle(
+-              fontSize: 32,
++              fontSize: 36,
+               fontWeight: FontWeight.w800,
++              letterSpacing: -1.2,
+               color: Colors.white,
+             ),
+           ),
+           if (subtitle != null)
+             Padding(
+-              padding: const EdgeInsets.only(top: 6),
++              padding: const EdgeInsets.only(top: 6, left: 40),
+               child: Text(
+                 subtitle!,
+                 style: const TextStyle(fontSize: 15, color: AppColors.textSecondary),
+@@ -59,14 +60,16 @@ class SectionHeader extends StatelessWidget {
+                 Text(
+                   title,
+                   style: const TextStyle(
+-                    fontSize: 20,
++                    fontSize: 21,
+                     fontWeight: FontWeight.w700,
++                    letterSpacing: -0.5,
+                     color: Colors.white,
+                   ),
+                 ),
+                 if (subtitle != null)
+                   Padding(
+-                    padding: const EdgeInsets.only(top: 3),
++                    // hanging indent: the subtitle sits further in than the title
++                    padding: const EdgeInsets.only(top: 3, left: 28),
+                     child: Text(
+                       subtitle!,
+                       style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+diff --git a/lib/widgets/media_tile.dart b/lib/widgets/media_tile.dart
+index f8e7067..a0dd707 100644
+--- a/lib/widgets/media_tile.dart
++++ b/lib/widgets/media_tile.dart
+@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
+ import '../services/download_service.dart';
+ import '../theme/app_theme.dart';
+ import '../utils/image_cache.dart';
++import 'pressable.dart';
+ 
+ /// Picture for a URL, or for a file:// URI (covers of downloaded songs work offline).
+ ImageProvider artProviderFor(String url) {
+@@ -40,7 +41,7 @@ class ArtImage extends StatelessWidget {
+   @override
+   Widget build(BuildContext context) {
+     return ClipRRect(
+-      borderRadius: BorderRadius.circular(circular ? size / 2 : radius),
++      borderRadius: circular ? BorderRadius.circular(size / 2) : asymRadius(radius),
+       child: Container(
+         width: size,
+         height: size,
+@@ -58,6 +59,15 @@ class ArtImage extends StatelessWidget {
+                 width: size,
+                 height: size,
+                 fit: BoxFit.cover,
++                // fade the cover in instead of popping
++                frameBuilder: (_, child, frame, sync) => sync
++                    ? child
++                    : AnimatedOpacity(
++                        opacity: frame == null ? 0 : 1,
++                        duration: const Duration(milliseconds: 300),
++                        curve: Curves.easeOut,
++                        child: child,
++                      ),
+                 errorBuilder: (_, _, _) => _fallback(),
+               ),
+       ),
+@@ -97,8 +107,7 @@ class MediaTile extends StatelessWidget {
+     final textAlign = circular ? TextAlign.center : TextAlign.start;
+     return SizedBox(
+       width: size,
+-      child: GestureDetector(
+-        behavior: HitTestBehavior.opaque,
++      child: Pressable(
+         onTap: onTap,
+         onLongPress: onLongPress,
+         child: Column(
+diff --git a/lib/widgets/player_sheet.dart b/lib/widgets/player_sheet.dart
+index 40cfc9f..388070a 100644
+--- a/lib/widgets/player_sheet.dart
++++ b/lib/widgets/player_sheet.dart
+@@ -1,3 +1,6 @@
++import 'package:flutter/services.dart';
++import '../theme/app_theme.dart';
++import 'pressable.dart';
+ import 'download_widgets.dart';
+ import 'media_tile.dart';
+ import 'youtube_link.dart';
+@@ -82,15 +85,16 @@ class _PlayerSheetState extends State<PlayerSheet> {
+           builder: (context, scrollController) {
+             return Container(
+               decoration: BoxDecoration(
+-                color: Theme.of(context).scaffoldBackgroundColor,
++                color: AppColors.surface,
++                border: const Border(top: BorderSide(color: AppColors.border)),
+                 borderRadius: const BorderRadius.vertical(
+-                  top: Radius.circular(20),
++                  top: Radius.circular(28),
+                 ),
+                 boxShadow: [
+                   BoxShadow(
+-                    color: Colors.black.withValues(alpha: 0.15),
+-                    blurRadius: 10,
+-                    spreadRadius: 2,
++                    color: Colors.black.withValues(alpha: 0.55),
++                    blurRadius: 28,
++                    offset: const Offset(0, -6),
+                   ),
+                 ],
+               ),
+@@ -106,14 +110,12 @@ class _PlayerSheetState extends State<PlayerSheet> {
+                         width: 40,
+                         height: 5,
+                         decoration: BoxDecoration(
+-                          color: Colors.grey.withValues(alpha: 0.5),
++                          color: Colors.white24,
+                           borderRadius: BorderRadius.circular(2.5),
+                         ),
+                       ),
+                     ),
+                   ),
+-                  // Divider
+-                  const Divider(),
+                   // Header row visible when collapsed (bold 18)
+                   _buildHeader(context, signedIn, scrollController),
+                   // Expanded content: progress indicator, details, controls
+@@ -212,7 +214,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
+                           fit: BoxFit.cover,
+                         )
+                       : null,
+-                  color: Colors.grey,
++                  color: AppColors.card,
+                 ),
+                 child: mediaItem.artUri == null
+                     ? const Icon(
+@@ -233,7 +235,8 @@ class _PlayerSheetState extends State<PlayerSheet> {
+                       style: const TextStyle(
+                         color: Colors.white,
+                         fontSize: 16,
+-                        fontWeight: FontWeight.bold,
++                        fontWeight: FontWeight.w700,
++                        letterSpacing: -0.2,
+                       ),
+                       maxLines: 1,
+                       overflow: TextOverflow.ellipsis,
+@@ -242,8 +245,8 @@ class _PlayerSheetState extends State<PlayerSheet> {
+                     Text(
+                       mediaItem.artist ?? 'Unknown Artist',
+                       style: const TextStyle(
+-                        color: Colors.grey,
+-                        fontSize: 12,
++                        color: AppColors.textSecondary,
++                        fontSize: 13,
+                       ),
+                       maxLines: 1,
+                       overflow: TextOverflow.ellipsis,
+@@ -251,20 +254,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
+                   ],
+                 ),
+               ),
+-              IconButton(
+-                icon: Icon(
+-                  playbackState.playing
+-                      ? Icons.pause_circle_outline
+-                      : Icons.play_circle_outline,
+-                ),
+-                onPressed: () {
+-                  if (playbackState.playing) {
+-                    XtifyAudioHandler.instance.pause();
+-                  } else {
+-                    XtifyAudioHandler.instance.play();
+-                  }
+-                },
+-              ),
++              _PlayButton(playing: playbackState.playing, size: 42),
+             ],
+           ),
+         );
+@@ -274,40 +264,49 @@ class _PlayerSheetState extends State<PlayerSheet> {
+ 
+   Widget _buildExpandedContent(BuildContext context, ScrollController scrollController) {
+     return Padding(
+-      padding: const EdgeInsets.all(16),
++      padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+       child: Column(
+         mainAxisSize: MainAxisSize.min,
+         children: [
+-          // Large art
++          // Large art: full-width square, centred
+           StreamBuilder<MediaItem?>(
+             stream: XtifyAudioHandler.instance.mediaItem,
+             builder: (context, snapshot) {
+               final mediaItem = snapshot.data;
+-              return Container(
+-                width: double.infinity,
+-                height: 200,
+-                margin: const EdgeInsets.only(bottom: 16),
+-                decoration: BoxDecoration(
+-                  borderRadius: BorderRadius.circular(12),
+-                  image: mediaItem?.artUri != null
+-                      ? DecorationImage(
+-                          image: artProviderFor(mediaItem!.artUri.toString()),
+-                          fit: BoxFit.cover,
+-                        )
+-                      : null,
+-                  color: Colors.grey,
++              return Padding(
++                padding: const EdgeInsets.only(top: 8, bottom: 24),
++                child: AspectRatio(
++                  aspectRatio: 1,
++                  child: AnimatedSwitcher(
++                    duration: const Duration(milliseconds: 350),
++                    child: Container(
++                      key: ValueKey(mediaItem?.artUri),
++                      decoration: BoxDecoration(
++                        borderRadius: BorderRadius.circular(12),
++                        boxShadow: [
++                          BoxShadow(
++                            color: Colors.black.withValues(alpha: 0.6),
++                            blurRadius: 32,
++                            offset: const Offset(0, 14),
++                          ),
++                        ],
++                        image: mediaItem?.artUri != null
++                            ? DecorationImage(
++                                image: artProviderFor(mediaItem!.artUri.toString()),
++                                fit: BoxFit.cover,
++                              )
++                            : null,
++                        color: AppColors.card,
++                      ),
++                      child: mediaItem?.artUri == null
++                          ? const Icon(Icons.music_note, size: 64, color: Colors.white38)
++                          : null,
++                    ),
++                  ),
+                 ),
+-                child: mediaItem?.artUri == null
+-                    ? const Icon(
+-                        Icons.music_note,
+-                        size: 64,
+-                        color: Colors.white54,
+-                      )
+-                    : null,
+               );
+             },
+           ),
+-          // Title and artist
+           StreamBuilder<MediaItem?>(
+             stream: XtifyAudioHandler.instance.mediaItem,
+             builder: (context, snapshot) {
+@@ -321,8 +320,9 @@ class _PlayerSheetState extends State<PlayerSheet> {
+                     mediaItem.title,
+                     style: const TextStyle(
+                       color: Colors.white,
+-                      fontSize: 20,
+-                      fontWeight: FontWeight.bold,
++                      fontSize: 24,
++                      fontWeight: FontWeight.w800,
++                      letterSpacing: -0.6,
+                     ),
+                     maxLines: 1,
+                     overflow: TextOverflow.ellipsis,
+@@ -332,7 +332,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
+                   Text(
+                     mediaItem.artist ?? 'Unknown Artist',
+                     style: const TextStyle(
+-                      color: Colors.grey,
++                      color: AppColors.textSecondary,
+                       fontSize: 16,
+                     ),
+                     maxLines: 1,
+@@ -362,18 +362,24 @@ class _PlayerSheetState extends State<PlayerSheet> {
+                     onSeek: (position) async {
+                       await XtifyAudioHandler.instance.seek(position);
+                     },
+-                    barHeight: 3.0,
+-                    baseBarColor: Colors.grey.withValues(alpha: 0.5),
+-                    progressBarColor: Colors.white,
++                    barHeight: 4.0,
++                    baseBarColor: Colors.white12,
++                    bufferedBarColor: Colors.white24,
++                    progressBarColor: AppColors.accent,
++                    thumbColor: Colors.white,
+                     thumbGlowColor: Colors.transparent,
+-                    thumbRadius: 6.0,
++                    thumbRadius: 7.0,
++                    timeLabelTextStyle: const TextStyle(
++                      color: AppColors.textSecondary,
++                      fontSize: 12,
++                    ),
+                   );
+                 },
+               );
+             },
+           ),
+           const SizedBox(height: 16),
+-          // Controls: previous / play-pause / next
++          // Controls, centred: shuffle, previous, play/pause, next, repeat
+           StreamBuilder<PlaybackState>(
+             stream: XtifyAudioHandler.instance.playbackState,
+             builder: (context, snapshot) {
+@@ -381,79 +387,43 @@ class _PlayerSheetState extends State<PlayerSheet> {
+                 return const SizedBox.shrink();
+               }
+               final PlaybackState playbackState = snapshot.data!;
+-
+               return Row(
+-                mainAxisAlignment: MainAxisAlignment.center,
++                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                 children: [
+-                  Builder(builder: (context) {
+-                    final t = XtifyAudioHandler.instance.currentTrack;
+-                    return t == null
+-                        ? const SizedBox(width: 48)
+-                        : FavouriteButton(track: t, size: 26);
+-                  }),
+-                  const SizedBox(width: 4),
++                  const _ShuffleButton(),
+                   IconButton(
+-                    icon: const Icon(Icons.skip_previous, size: 28),
++                    icon: const Icon(Icons.skip_previous_rounded, size: 42),
+                     onPressed: () {
++                      HapticFeedback.selectionClick();
+                       XtifyAudioHandler.instance.skipToPrevious();
+                     },
+                     color: Colors.white,
+                   ),
+-                  const SizedBox(width: 4),
+-                  IconButton(
+-                    icon: Icon(
+-                      playbackState.playing
+-                          ? Icons.pause_circle_outline
+-                          : Icons.play_circle_outline,
+-                      size: 28,
+-                    ),
+-                    onPressed: () {
+-                      if (playbackState.playing) {
+-                        XtifyAudioHandler.instance.pause();
+-                      } else {
+-                        XtifyAudioHandler.instance.play();
+-                      }
+-                    },
+-                    color: Colors.white,
+-                  ),
+-                  const SizedBox(width: 4),
++                  _PlayButton(playing: playbackState.playing, size: 72),
+                   IconButton(
+-                    icon: const Icon(Icons.skip_next, size: 28),
++                    icon: const Icon(Icons.skip_next_rounded, size: 42),
+                     onPressed: () {
++                      HapticFeedback.selectionClick();
+                       XtifyAudioHandler.instance.skipToNext();
+                     },
+                     color: Colors.white,
+                   ),
+-                  const SizedBox(width: 8),
+-                  IconButton(
+-                    icon: const Icon(Icons.playlist_add, size: 26),
+-                    tooltip: 'Add to playlist',
+-                    onPressed: () {
+-                      final t = XtifyAudioHandler.instance.currentTrack;
+-                      if (t != null) showAddToPlaylistSheet(context, t);
+-                    },
+-                    color: Colors.white,
+-                  ),
+-                  Builder(builder: (context) {
+-                    final t = XtifyAudioHandler.instance.currentTrack;
+-                    return t == null
+-                        ? const SizedBox(width: 48)
+-                        : DownloadButton(track: t, size: 26);
+-                  }),
++                  const _RepeatButton(),
+                 ],
+               );
+             },
+           ),
+-          const SizedBox(height: 8),
+-          const _UtilityRow(),
++          const SizedBox(height: 12),
++          const _ActionRow(),
+           const SizedBox(height: 16),
+           // Up next
+           const Text(
+             'Up next',
+             style: TextStyle(
+               color: Colors.white,
+-              fontSize: 16,
+-              fontWeight: FontWeight.bold,
++              fontSize: 18,
++              fontWeight: FontWeight.w700,
++              letterSpacing: -0.3,
+             ),
+           ),
+           const SizedBox(height: 8),
+@@ -486,7 +456,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
+                               finding
+                                   ? 'Finding the next song…'
+                                   : 'The next song is picked automatically',
+-                              style: const TextStyle(color: Colors.grey, fontSize: 14),
++                              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                             ),
+                           ),
+                         ],
+@@ -522,7 +492,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
+                           ),
+                           subtitle: Text(
+                             upcoming[i].artist ?? 'Unknown Artist',
+-                            style: const TextStyle(color: Colors.grey, fontSize: 12),
++                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                           ),
+                         ),
+                     ],
+@@ -537,41 +507,117 @@ class _PlayerSheetState extends State<PlayerSheet> {
+   }
+ }
+ 
++/// Round white play/pause button; the icon swaps with a little pop.
++class _PlayButton extends StatelessWidget {
++  final bool playing;
++  final double size;
++  const _PlayButton({required this.playing, required this.size});
++
++  @override
++  Widget build(BuildContext context) {
++    return Pressable(
++      scale: 0.9,
++      onTap: () {
++        HapticFeedback.lightImpact();
++        if (playing) {
++          XtifyAudioHandler.instance.pause();
++        } else {
++          XtifyAudioHandler.instance.play();
++        }
++      },
++      child: Container(
++        width: size,
++        height: size,
++        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
++        child: AnimatedSwitcher(
++          duration: const Duration(milliseconds: 180),
++          transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
++          child: Icon(
++            playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
++            key: ValueKey(playing),
++            color: Colors.black,
++            size: size * 0.62,
++          ),
++        ),
++      ),
++    );
++  }
++}
++
+ /// Shuffle, repeat, queue and the original YouTube link, under the main controls.
+-class _UtilityRow extends StatelessWidget {
+-  const _UtilityRow();
++class _ShuffleButton extends StatelessWidget {
++  const _ShuffleButton();
++
++  @override
++  Widget build(BuildContext context) {
++    final h = XtifyAudioHandler.instance;
++    return ValueListenableBuilder<bool>(
++      valueListenable: h.shuffleOn,
++      builder: (_, shuffle, _) => IconButton(
++        tooltip: shuffle ? 'Shuffle on' : 'Shuffle off',
++        icon: Icon(Icons.shuffle_rounded, color: shuffle ? Colors.white : Colors.white38),
++        onPressed: () => h.setShuffle(!shuffle),
++      ),
++    );
++  }
++}
++
++class _RepeatButton extends StatelessWidget {
++  const _RepeatButton();
++
++  @override
++  Widget build(BuildContext context) {
++    final h = XtifyAudioHandler.instance;
++    return ValueListenableBuilder<XtifyRepeat>(
++      valueListenable: h.repeat,
++      builder: (_, mode, _) => IconButton(
++        tooltip: switch (mode) {
++          XtifyRepeat.off => 'Repeat off',
++          XtifyRepeat.all => 'Repeat all',
++          XtifyRepeat.one => 'Repeat this song',
++        },
++        icon: Icon(
++          mode == XtifyRepeat.one ? Icons.repeat_one_rounded : Icons.repeat_rounded,
++          color: mode == XtifyRepeat.off ? Colors.white38 : Colors.white,
++        ),
++        onPressed: h.cycleRepeat,
++      ),
++    );
++  }
++}
++
++/// Heart, playlist, download, queue and YouTube link in one centred row.
++class _ActionRow extends StatelessWidget {
++  const _ActionRow();
+ 
+   @override
+   Widget build(BuildContext context) {
+     final h = XtifyAudioHandler.instance;
+-    const on = Colors.greenAccent;
+-    const off = Colors.white54;
++    // rebuild whenever the song changes so the buttons point at the new track
++    return StreamBuilder<MediaItem?>(
++      stream: h.mediaItem,
++      builder: (context, _) => _buttons(context, h, h.currentTrack),
++    );
++  }
++
++  Widget _buttons(BuildContext context, XtifyAudioHandler h, Track? t) {
+     return Row(
+       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+       children: [
+-        ValueListenableBuilder<bool>(
+-          valueListenable: h.shuffleOn,
+-          builder: (_, shuffle, _) => IconButton(
+-            tooltip: shuffle ? 'Shuffle on' : 'Shuffle off',
+-            icon: Icon(Icons.shuffle, color: shuffle ? on : off),
+-            onPressed: () => h.setShuffle(!shuffle),
+-          ),
+-        ),
+-        ValueListenableBuilder<XtifyRepeat>(
+-          valueListenable: h.repeat,
+-          builder: (_, mode, _) => IconButton(
+-            tooltip: switch (mode) {
+-              XtifyRepeat.off => 'Repeat off',
+-              XtifyRepeat.all => 'Repeat all',
+-              XtifyRepeat.one => 'Repeat this song',
+-            },
+-            icon: Icon(
+-              mode == XtifyRepeat.one ? Icons.repeat_one : Icons.repeat,
+-              color: mode == XtifyRepeat.off ? off : on,
+-            ),
+-            onPressed: h.cycleRepeat,
+-          ),
++        t == null
++            ? const SizedBox(width: 40)
++            : FavouriteButton(track: t, size: 24),
++        IconButton(
++          tooltip: 'Add to playlist',
++          icon: const Icon(Icons.playlist_add, size: 24),
++          color: Colors.white,
++          onPressed: () {
++            if (t != null) showAddToPlaylistSheet(context, t);
++          },
+         ),
++        t == null
++            ? const SizedBox(width: 40)
++            : DownloadButton(track: t, size: 24),
+         ValueListenableBuilder<List<Track>>(
+           valueListenable: h.upNextQueue,
+           builder: (_, queue, _) => IconButton(
+@@ -587,9 +633,9 @@ class _UtilityRow extends StatelessWidget {
+         ),
+         IconButton(
+           tooltip: 'Open original on YouTube',
+-          icon: const Icon(Icons.open_in_new, color: Colors.white),
++          icon: const Icon(Icons.open_in_new, size: 22),
++          color: Colors.white,
+           onPressed: () {
+-            final t = h.currentTrack;
+             if (t != null && t.isPlayable) showYoutubeLink(context, t);
+           },
+         ),
+diff --git a/lib/widgets/pressable.dart b/lib/widgets/pressable.dart
+new file mode 100644
+index 0000000..26abf19
+--- /dev/null
++++ b/lib/widgets/pressable.dart
+@@ -0,0 +1,46 @@
++import 'package:flutter/material.dart';
++
++/// Wraps any widget so it shrinks slightly while pressed.
++class Pressable extends StatefulWidget {
++  final Widget child;
++  final VoidCallback? onTap;
++  final VoidCallback? onLongPress;
++  final double scale;
++
++  const Pressable({
++    super.key,
++    required this.child,
++    this.onTap,
++    this.onLongPress,
++    this.scale = 0.96,
++  });
++
++  @override
++  State<Pressable> createState() => _PressableState();
++}
++
++class _PressableState extends State<Pressable> {
++  bool _down = false;
++
++  void _set(bool v) {
++    if (_down != v) setState(() => _down = v);
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    return GestureDetector(
++      behavior: HitTestBehavior.opaque,
++      onTapDown: (_) => _set(true),
++      onTapUp: (_) => _set(false),
++      onTapCancel: () => _set(false),
++      onTap: widget.onTap,
++      onLongPress: widget.onLongPress,
++      child: AnimatedScale(
++        scale: _down ? widget.scale : 1,
++        duration: const Duration(milliseconds: 120),
++        curve: Curves.easeOut,
++        child: widget.child,
++      ),
++    );
++  }
++}
