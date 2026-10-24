@@ -10,7 +10,19 @@ bool playableNow(Track t) =>
     ConnectivityService.instance.online.value || DownloadService.instance.isDownloaded(t.id);
 
 /// Plays [track] and keeps the user informed (preparing / error + retry).
+final Set<String> _loadingIds = {};
+
 Future<void> playTrackWithFeedback(BuildContext context, Track track) async {
+  // the same song is already loading: extra taps do nothing
+  if (!_loadingIds.add(track.id)) return;
+  try {
+    await _playWithFeedback(context, track);
+  } finally {
+    _loadingIds.remove(track.id);
+  }
+}
+
+Future<void> _playWithFeedback(BuildContext context, Track track) async {
   final messenger = ScaffoldMessenger.of(context);
   messenger.hideCurrentSnackBar();
   if (!playableNow(track)) {

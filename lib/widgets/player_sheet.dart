@@ -524,6 +524,7 @@ class _PlayPauseButton extends StatelessWidget {
     return Pressable(
       haptic: true,
       scale: 0.9,
+      debounce: const Duration(milliseconds: 120),
       onTap: () {
         if (playing) {
           XtifyAudioHandler.instance.pause();
@@ -662,6 +663,7 @@ class _ModeButton extends StatelessWidget {
       message: tooltip,
       child: Pressable(
         haptic: true,
+        debounce: const Duration(milliseconds: 150),
         onTap: onTap,
         child: SizedBox(
           width: 48,

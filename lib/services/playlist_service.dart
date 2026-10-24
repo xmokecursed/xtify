@@ -70,13 +70,21 @@ class PlaylistService {
       byId(favouritesId)?.tracks.any((t) => t.id == trackId) ?? false;
 
   /// Returns true when the song is now a favourite.
+  final Set<String> _favBusy = {};
+
   Future<bool> toggleFavourite(Track t) async {
-    if (isFavourite(t.id)) {
-      await removeTrack(favouritesId, t.id);
-      return false;
+    // spamming the heart: one change at a time per song
+    if (!_favBusy.add(t.id)) return isFavourite(t.id);
+    try {
+      if (isFavourite(t.id)) {
+        await removeTrack(favouritesId, t.id);
+        return false;
+      }
+      await addTrack(favouritesId, t);
+      return true;
+    } finally {
+      _favBusy.remove(t.id);
     }
-    await addTrack(favouritesId, t);
-    return true;
   }
 
   Playlist? byId(String id) {

@@ -223,20 +223,6 @@ class AutoQueueService {
       }
     }
 
-    // 3) previously played songs, most recent first
-    if (found.length < enough) {
-      final previous = HistoryService.instance.tracks.value
-          .where((t) => t.id != seed.id)
-          .take(3);
-      for (final prev in previous) {
-        found.addAll(await _similarFor(prev.artist, cleanTitle(prev.title)));
-        if (found.length >= enough) {
-          debugPrint('auto-queue: seeded from earlier song "${prev.title}"');
-          break;
-        }
-      }
-    }
-
     // 4) artist level
     if (found.length < enough && artist.isNotEmpty) {
       try {

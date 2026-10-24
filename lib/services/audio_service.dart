@@ -86,6 +86,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
         });
       }
     });
+    _watchdogTimer = Timer.periodic(const Duration(seconds: 4), (_) => _watchdog());
     // Start preparing the next song with 120 s left; gapless hand-off
     _player.positionStream.listen(_onPosition);
     _player.currentIndexStream.listen(_onIndexChanged);
@@ -100,27 +101,88 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       if (_settingSource) return; // playTrack handles errors during its own load
       try {
         final idx = error.index;
-        if (idx == null || idx >= _player.sequence.length) return;
+        final cur = _player.currentIndex;
+        if (idx == null || idx == cur) {
+          // the song that is playing broke (expired link, network drop): reload it in place
+          debugPrint('current song failed, reloading it');
+          _recoverCurrent();
+          return;
+        }
+        if (idx >= _player.sequence.length) return;
         final item = _player.sequence[idx].tag as MediaItem?;
         final track = item == null ? null : _tracksById[item.id];
         if (track == null) return;
         AudioUrlResolver.clearCache(track.id);
-        if (idx == _player.currentIndex) {
-          debugPrint('song failed to open, retrying: ${track.title}');
-          playTrack(track, userInitiated: false, keepContext: true).catchError((Object e) {
-            debugPrint('retry failed: $e');
-          });
-        } else {
-          _player.removeAudioSourceAt(idx).catchError((Object e) {});
-          _nextQueued = false; // try another candidate
-          _preloaded = null;
-          _preloadedFromUser = false;
-          _publishQueue();
-        }
+        _player.removeAudioSourceAt(idx).catchError((Object e) {});
+        _nextQueued = false; // try another candidate
+        _preloaded = null;
+        _preloadedFromUser = false;
+        _publishQueue();
       } catch (e) {
         debugPrint('error recovery failed: $e');
       }
     });
+  }
+
+  // ---------------- self-healing ----------------
+  Timer? _watchdogTimer;
+  bool _recovering = false;
+  int _recoveryStreak = 0;
+  DateTime _lastRecovery = DateTime.fromMillisecondsSinceEpoch(0);
+  Duration _wdPos = Duration.zero;
+  DateTime _wdAt = DateTime.now();
+
+  /// Reloads the current song at the same position (fresh link). Gives up after a few
+  /// quick failures in a row so it can never loop. [force] = the user asked for it.
+  Future<void> _recoverCurrent({Duration? at, bool force = false}) async {
+    final t = _currentTrack;
+    if (t == null || _recovering || !_sourceLoaded) return;
+    final now = DateTime.now();
+    _recoveryStreak = now.difference(_lastRecovery) < const Duration(seconds: 30)
+        ? _recoveryStreak + 1
+        : 0;
+    if (!force && _recoveryStreak >= 3) return;
+    _recovering = true;
+    _lastRecovery = now;
+    final pos = at ?? _player.position;
+    try {
+      AudioUrlResolver.clearCache(t.id);
+      await playTrack(t, userInitiated: false, keepContext: true, startAt: pos);
+    } catch (e) {
+      debugPrint('recovery failed: ${_short(e)}');
+    } finally {
+      _recovering = false;
+      _wdAt = DateTime.now();
+    }
+  }
+
+  /// Every 4 s: if audio should be playing but is stuck (frozen or buffering far too long), reload it.
+  void _watchdog() {
+    final now = DateTime.now();
+    if (!_sourceLoaded || _recovering || _settingSource || _currentTrack == null) {
+      _wdAt = now;
+      return;
+    }
+    final st = _player.processingState;
+    final pos = _player.position;
+    if (!_player.playing || st == ProcessingState.completed) {
+      _wdAt = now;
+      _wdPos = pos;
+      return;
+    }
+    if (pos != _wdPos && st != ProcessingState.idle) {
+      _wdPos = pos;
+      _wdAt = now;
+      return;
+    }
+    final limit = st == ProcessingState.ready
+        ? const Duration(seconds: 12)
+        : const Duration(seconds: 25);
+    if (st == ProcessingState.idle || now.difference(_wdAt) > limit) {
+      debugPrint('watchdog: playback stuck ($st), reloading');
+      _wdAt = now;
+      _recoverCurrent();
+    }
   }
 
   static XtifyAudioHandler get instance => _instance!;
@@ -194,6 +256,10 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       }
       return;
     }
+    if (_sourceLoaded && _player.processingState == ProcessingState.idle) {
+      await _recoverCurrent(force: true); // the stream died: bring it back where it was
+      return;
+    }
     await _player.play();
   }
 
@@ -205,6 +271,9 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> seek(Duration position) async {
+    if (_sourceLoaded && _player.processingState == ProcessingState.idle) {
+      return _recoverCurrent(at: position, force: true);
+    }
     if (_sourceLoaded) return _player.seek(position);
     _restoredPosition = position; // nothing loaded yet: just move the marker
     playbackState.add(playbackState.value.copyWith(updatePosition: position));
@@ -535,8 +604,13 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     final next = await _autoQueue.nextFor(seed);
     if (next != null) return next;
-    // never go silent: fall back to something already played
-    final others = HistoryService.instance.tracks.value.where((t) => t.id != seed.id).toList()..shuffle();
+    // Fall back only to another song by the SAME artist; never jump to an unrelated artist.
+    final a = seed.artist.trim().toLowerCase();
+    if (a.isEmpty) return null;
+    final others = HistoryService.instance.tracks.value
+        .where((t) => t.id != seed.id && t.artist.trim().toLowerCase() == a)
+        .toList()
+      ..shuffle();
     return others.firstOrNull;
   }
 
@@ -868,6 +942,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> dispose() {
+    _watchdogTimer?.cancel();
     return _player.dispose();
   }
 }
