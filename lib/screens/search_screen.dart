@@ -8,6 +8,7 @@ import 'package:xtify_app/services/search_history_service.dart';
 import 'package:xtify_app/theme/app_theme.dart';
 import 'package:xtify_app/widgets/layout.dart';
 import 'package:xtify_app/widgets/media_tile.dart';
+import 'package:xtify_app/widgets/offline_banner.dart';
 import 'package:xtify_app/widgets/track_row.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -37,6 +38,7 @@ class _SearchScreenState extends State<SearchScreen> {
           return CustomScrollView(
             slivers: [
               const SliverToBoxAdapter(child: ScreenHeader(title: 'Search')),
+              const SliverToBoxAdapter(child: OfflineBanner()),
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(

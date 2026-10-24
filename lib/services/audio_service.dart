@@ -3,12 +3,15 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/track_model.dart';
 import '../services/audio_url_resolver.dart';
+import '../services/connectivity_service.dart';
 import '../services/download_service.dart';
 import '../services/history_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auto_queue_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:rxdart/rxdart.dart';
+
+enum XtifyRepeat { off, all, one }
 
 class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   final _player = AudioPlayer();
@@ -22,6 +25,18 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   Track? _currentTrack;
   // Playlist being played in order; empty = auto-queue decides what is next.
   List<Track> _context = const [];
+  List<Track> _ctxOriginal = const []; // the playlist's own order (shuffle turns off back to it)
+  String? _ctxCursorId; // last playlist song played: the playlist resumes after queued songs
+
+  // Songs the user lined up ("Play next" / "Add to queue"). They play before the
+  // playlist or the auto-picks. The song already loaded as "next" is shown at the front.
+  List<Track> _userQueue = [];
+  Track? _preloaded; // the song already added to the player as "next"
+  bool _preloadedFromUser = false;
+  int _prepareEpoch = 0; // bumped whenever what comes next changes
+  final ValueNotifier<List<Track>> upNextQueue = ValueNotifier<List<Track>>(const []);
+  final ValueNotifier<bool> shuffleOn = ValueNotifier<bool>(false);
+  final ValueNotifier<XtifyRepeat> repeat = ValueNotifier<XtifyRepeat>(XtifyRepeat.off);
 
   Track? get currentTrack => _currentTrack;
   bool _nextQueued = false;
@@ -55,6 +70,10 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     // When the last queued song ends, move on (slow path if nothing was ready)
     _player.processingStateStream.listen((state) {
       if (state == ProcessingState.completed) {
+        if (repeat.value == XtifyRepeat.one) {
+          _player.seek(Duration.zero).then((_) => _player.play());
+          return;
+        }
         skipToNext().catchError((Object e) {
           debugPrint('auto-advance failed: $e');
         });
@@ -87,6 +106,9 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
         } else {
           _player.removeAudioSourceAt(idx).catchError((Object e) {});
           _nextQueued = false; // try another candidate
+          _preloaded = null;
+          _preloadedFromUser = false;
+          _publishQueue();
         }
       } catch (e) {
         debugPrint('error recovery failed: $e');
@@ -273,6 +295,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     try {
       final next = await _nextTrack(seed);
       if (next == null) return;
+      _consumeUserHead(next);
       await playTrack(next, userInitiated: false, keepContext: true);
     } finally {
       _advancing = false;
@@ -313,6 +336,14 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> playTrack(Track track,
       {bool userInitiated = true, bool keepContext = false, Duration? startAt}) async {
     final token = ++_playToken;
+    // a queued song that was loaded as "next" goes back to the front of the queue
+    if (_preloaded != null && _preloadedFromUser) _userQueue = [_preloaded!, ..._userQueue];
+    _preloaded = null;
+    _preloadedFromUser = false;
+    _prepareEpoch++;
+    // playing a song that is also queued: it is not queued twice
+    _userQueue = _userQueue.where((x) => x.id != track.id).toList();
+    _publishQueue();
     final mediaItem = XtifyAudioHandler.createMediaItem(track);
     final videoId = (mediaItem.extras?['videoId'] as String?) ?? '';
     if (videoId.isEmpty) throw Exception('Missing video ID in media item');
@@ -323,7 +354,11 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     _prepareAttempts = 0;
     _queuedUrls.clear();
     _currentTrack = track;
-    if (!keepContext) _context = const [];
+    if (!keepContext) {
+      _context = const [];
+      _ctxOriginal = const [];
+      _ctxCursorId = null;
+    }
     _tracksById[track.id] = track;
     if (userInitiated) {
       _autoQueue.startSession(track);
@@ -422,13 +457,22 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Plays [tracks] in order (or shuffled). When they run out, auto-queue continues.
   Future<void> playPlaylist(List<Track> tracks,
       {int startIndex = 0, bool shuffle = false}) async {
-    final playable = tracks.where((t) => t.isPlayable).toList();
-    if (playable.isEmpty) throw Exception('No playable songs in this playlist');
-    final startTrack = (startIndex >= 0 &&
-            startIndex < tracks.length &&
-            tracks[startIndex].isPlayable)
-        ? tracks[startIndex]
-        : playable.first;
+    // offline, only downloaded songs can play
+    final offline = !ConnectivityService.instance.online.value;
+    bool ok(Track t) =>
+        t.isPlayable && (!offline || DownloadService.instance.isDownloaded(t.id));
+    final playable = tracks.where(ok).toList();
+    if (playable.isEmpty) {
+      throw Exception(offline
+          ? 'No downloaded songs here to play offline'
+          : 'No playable songs in this playlist');
+    }
+    final startTrack =
+        (startIndex >= 0 && startIndex < tracks.length && ok(tracks[startIndex]))
+            ? tracks[startIndex]
+            : playable.first;
+    _ctxOriginal = [...playable];
+    shuffleOn.value = shuffle;
     final list = [...playable];
     if (shuffle) {
       list.removeWhere((t) => t.id == startTrack.id);
@@ -436,14 +480,50 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       list.insert(0, startTrack);
     }
     _context = list;
+    _ctxCursorId = startTrack.id;
     await playTrack(startTrack, keepContext: true);
   }
 
-  /// Next song: the playlist's next one, otherwise whatever auto-queue picks.
+  /// Position of [seed] in the playlist; a queued song that is not in the playlist
+  /// counts as the last playlist song that played, so the playlist resumes after it.
+  int _ctxIndex(Track seed) {
+    var i = _context.indexWhere((t) => t.id == seed.id);
+    if (i < 0 && _ctxCursorId != null) {
+      i = _context.indexWhere((t) => t.id == _ctxCursorId);
+    }
+    return i;
+  }
+
+  Track? _contextNext(Track seed, bool offline) {
+    if (_context.isEmpty) return null;
+    final base = _ctxIndex(seed);
+    if (base < 0) return null;
+    bool ok(Track t) => !offline || DownloadService.instance.isDownloaded(t.id);
+    for (var j = base + 1; j < _context.length; j++) {
+      if (ok(_context[j])) return _context[j];
+    }
+    if (repeat.value == XtifyRepeat.all) {
+      for (var j = 0; j <= base; j++) {
+        if (ok(_context[j])) return _context[j]; // back to the start (or the same song again)
+      }
+    }
+    return null;
+  }
+
+  /// Next song: the user's queue first, then the playlist, otherwise whatever
+  /// auto-queue picks (offline: another downloaded song).
   Future<Track?> _nextTrack(Track seed) async {
-    if (_context.isNotEmpty) {
-      final i = _context.indexWhere((t) => t.id == seed.id);
-      if (i >= 0 && i + 1 < _context.length) return _context[i + 1];
+    if (_userQueue.isNotEmpty) return _userQueue.first; // peeked; taken once it is committed
+    final offline = !ConnectivityService.instance.online.value;
+    final inContext = _contextNext(seed, offline);
+    if (inContext != null) return inContext;
+    if (offline) {
+      final others = DownloadService.instance.items.value.values
+          .map((e) => e.track)
+          .where((t) => t.id != seed.id)
+          .toList()
+        ..shuffle();
+      return others.firstOrNull;
     }
     final next = await _autoQueue.nextFor(seed);
     if (next != null) return next;
@@ -452,12 +532,22 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     return others.firstOrNull;
   }
 
+  /// Takes [t] off the front of the user's queue when it is the song that was picked from it.
+  void _consumeUserHead(Track t) {
+    if (_userQueue.isNotEmpty && _userQueue.first.id == t.id) {
+      _userQueue = _userQueue.sublist(1);
+      _publishQueue();
+    }
+  }
+
   void _started(Track t) {    
     HistoryService.instance.add(t);    
     // While a playlist still has songs left, it decides what is next
-    final i = _context.indexWhere((x) => x.id == t.id);
-    final playlistHasNext = i >= 0 && i + 1 < _context.length;
-    if (!playlistHasNext) {
+    if (_context.any((x) => x.id == t.id)) _ctxCursorId = t.id;
+    final i = _ctxIndex(t);
+    final playlistHasNext = i >= 0 &&
+        (i + 1 < _context.length || repeat.value == XtifyRepeat.all);
+    if (!playlistHasNext && _userQueue.isEmpty) {
       _autoQueue.warm(t); // Last.fm + backend search now, so the next song is picked early
     }  
   }  
@@ -476,44 +566,188 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     _prepareNext();  
   }  
 
-  Future<void> _prepareNext() async {    
-    final seed = _currentTrack;    
-    if (seed == null || _preparingNext || _nextQueued) return;    
-    _preparingNext = true;    
+  Future<void> _prepareNext() async {
+    final seed = _currentTrack;
+    if (seed == null || _preparingNext || _nextQueued) return;
+    if (repeat.value == XtifyRepeat.one) return; // the same song plays again, nothing to load
+    _preparingNext = true;
     findingNext.value = true;
-    _prepareAttempts++;    
-    _lastPrepareAt = DateTime.now();    
-    final token = _playToken;    
-    final sw = Stopwatch()..start();    
-    try {      
-      final next = await _nextTrack(seed);      
-      if (next == null) {        
-        debugPrint('auto-queue: no candidate for "${seed.title}"');        
-        return;      
-      }      
-      if (token != _playToken) return;      
-      final resolved = await _resolveForQueue(next.id);      
-      if (resolved == null || token != _playToken) return;      
-      final item = createMediaItem(next);      
-      _tracksById[next.id] = next;      
-      _queuedUrls[next.id] = resolved;      
-      await _player.addAudioSource(AudioSource.uri(        
-        Uri.parse(resolved.url),        
-        headers: resolved.headers.isEmpty ? null : resolved.headers,        
-        tag: item,      ));      
-      if (token != _playToken) return;      
-      _nextQueued = true;      
-      _queue.add([..._queue.value, item]);      
-      debugPrint('auto-queue: "${next.title}" ready in ${sw.elapsedMilliseconds}ms');    
-    } catch (e) {      
-      debugPrint('auto-queue failed: ${_short(e)}');    
-    } finally {      
-      if (token == _playToken) {        
-        _preparingNext = false;        
-        findingNext.value = false;      
-      }  
-  }  
-  }  
+    _prepareAttempts++;
+    _lastPrepareAt = DateTime.now();
+    final token = _playToken;
+    final epoch = _prepareEpoch;
+    bool stale() => token != _playToken || epoch != _prepareEpoch;
+    final sw = Stopwatch()..start();
+    try {
+      final next = await _nextTrack(seed);
+      if (next == null) {
+        debugPrint('auto-queue: no candidate for "${seed.title}"');
+        return;
+      }
+      if (next.id == seed.id) return; // replay of the same song: handled when it ends
+      if (stale()) return;
+      final fromUser = _userQueue.isNotEmpty && _userQueue.first.id == next.id;
+      final resolved = await _resolveForQueue(next.id);
+      if (resolved == null || stale()) return;
+      final item = createMediaItem(next);
+      _tracksById[next.id] = next;
+      _queuedUrls[next.id] = resolved;
+      await _player.addAudioSource(AudioSource.uri(
+        Uri.parse(resolved.url),
+        headers: resolved.headers.isEmpty ? null : resolved.headers,
+        tag: item,
+      ));
+      if (token != _playToken) return;
+      if (epoch != _prepareEpoch) {
+        // what comes next changed while this one loaded: take it out again
+        try {
+          await _player.removeAudioSourceAt(_player.sequence.length - 1);
+        } catch (_) {}
+        return;
+      }
+      _nextQueued = true;
+      _preloaded = next;
+      _preloadedFromUser = fromUser;
+      if (fromUser) _consumeUserHead(next);
+      _queue.add([..._queue.value, item]);
+      _publishQueue();
+      debugPrint('auto-queue: "${next.title}" ready in ${sw.elapsedMilliseconds}ms');
+    } catch (e) {
+      debugPrint('auto-queue failed: ${_short(e)}');
+    } finally {
+      if (token == _playToken) {
+        _preparingNext = false;
+        findingNext.value = false;
+      }
+    }
+  }
+
+  // ---------------- the user's queue, shuffle and repeat ----------------
+
+  /// What the queue screen shows: the loaded "next" song (if it came from the
+  /// queue) followed by the rest of the queue.
+  void _publishQueue() {
+    upNextQueue.value = [
+      if (_preloadedFromUser && _preloaded != null) _preloaded!,
+      ..._userQueue,
+    ];
+  }
+
+  /// Unloads the song waiting as "next" so that what comes next can change.
+  /// A queued song that was waiting goes back to the front of the queue.
+  Future<void> _dropPreloaded() async {
+    _prepareEpoch++;
+    _prepareAttempts = 0;
+    _lastPrepareAt = DateTime.fromMillisecondsSinceEpoch(0);
+    if (_nextQueued) {
+      final idx = (_player.currentIndex ?? 0) + 1;
+      try {
+        if (idx < _player.sequence.length) await _player.removeAudioSourceAt(idx);
+      } catch (e) {
+        debugPrint('could not unload the next song: $e');
+      }
+      final cur = _mediaItem.valueOrNull;
+      if (cur != null) _queue.add([cur]);
+      _nextQueued = false;
+    }
+    final p = _preloaded;
+    if (p != null) {
+      _queuedUrls.remove(p.id);
+      if (_preloadedFromUser) _userQueue = [p, ..._userQueue];
+    }
+    _preloaded = null;
+    _preloadedFromUser = false;
+    _publishQueue();
+  }
+
+  /// Puts [t] at the front of the queue. Returns false when it is the song playing now.
+  /// With nothing playing, the song just starts.
+  Future<bool> playNext(Track t) async {
+    if (!t.isPlayable) return false;
+    if (_currentTrack == null) {
+      await playTrack(t);
+      return true;
+    }
+    if (_currentTrack!.id == t.id) return false;
+    await _dropPreloaded();
+    _tracksById[t.id] = t;
+    _userQueue = [t, ..._userQueue.where((x) => x.id != t.id)];
+    _publishQueue();
+    return true;
+  }
+
+  /// Puts [t] at the end of the queue. Returns false when it is playing or already queued.
+  Future<bool> addToQueue(Track t) async {
+    if (!t.isPlayable) return false;
+    if (_currentTrack == null) {
+      await playTrack(t);
+      return true;
+    }
+    if (_currentTrack!.id == t.id) return false;
+    await _dropPreloaded();
+    if (_userQueue.any((x) => x.id == t.id)) return false;
+    _tracksById[t.id] = t;
+    _userQueue = [..._userQueue, t];
+    _publishQueue();
+    return true;
+  }
+
+  Future<void> removeFromQueue(int index) async {
+    await _dropPreloaded();
+    if (index < 0 || index >= _userQueue.length) return;
+    _userQueue = [..._userQueue]..removeAt(index);
+    _publishQueue();
+  }
+
+  /// [newIndex] follows ReorderableListView.onReorderItem (already corrected for the removal).
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    await _dropPreloaded();
+    if (oldIndex < 0 || oldIndex >= _userQueue.length) return;
+    final list = [..._userQueue];
+    final item = list.removeAt(oldIndex);
+    list.insert(newIndex.clamp(0, list.length), item);
+    _userQueue = list;
+    _publishQueue();
+  }
+
+  Future<void> clearUserQueue() async {
+    await _dropPreloaded();
+    _userQueue = [];
+    _publishQueue();
+  }
+
+  /// Plays a queued song right now; the songs before it stay queued.
+  Future<void> playQueueItem(int index) async {
+    await _dropPreloaded();
+    if (index < 0 || index >= _userQueue.length) return;
+    final t = _userQueue[index];
+    _userQueue = [..._userQueue]..removeAt(index);
+    _publishQueue();
+    await playTrack(t, userInitiated: false, keepContext: true);
+  }
+
+  Future<void> setShuffle(bool on) async {
+    if (shuffleOn.value == on) return;
+    shuffleOn.value = on;
+    if (_context.isEmpty) return; // nothing to reorder: auto-queue picks anyway
+    await _dropPreloaded();
+    final cur = _currentTrack;
+    final i = cur == null ? -1 : _ctxIndex(cur);
+    if (on) {
+      _ctxOriginal = [..._context];
+      final head = i >= 0 ? _context.sublist(0, i + 1) : <Track>[];
+      final tail = (i >= 0 ? _context.sublist(i + 1) : [..._context])..shuffle();
+      _context = [...head, ...tail];
+    } else if (_ctxOriginal.isNotEmpty) {
+      _context = [..._ctxOriginal]; // back to the playlist's own order
+    }
+  }
+
+  Future<void> cycleRepeat() async {
+    final next = XtifyRepeat.values[(repeat.value.index + 1) % XtifyRepeat.values.length];
+    repeat.value = next;
+    await _dropPreloaded(); // what comes next may differ now (wrap-around / replay)
+  }
 
   /// file:// source for a downloaded song, or null when it is not on the phone.
   ResolvedAudioUrl? _localUrl(String videoId) {
@@ -554,6 +788,9 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     final item = seq[index].tag as MediaItem?;    
     if (item == null || item.id == _mediaItem.valueOrNull?.id) return;    
     _mediaItem.add(item);    
+    _preloaded = null;
+    _preloadedFromUser = false;
+    _publishQueue();
     final track = _tracksById[item.id];    
     if (track != null) {      
       _currentTrack = track;      
@@ -589,11 +826,18 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       title: track.title,
       artist: track.artist,
       duration: _parseDuration(track.duration),      
-      artUri: track.imageUrl.isEmpty ? null : Uri.tryParse(track.imageUrl),
+      artUri: _artUriFor(track),
       extras: {
         'videoId': track.id, // Store YouTube video ID for later resolution
       },
     );
+  }
+
+  /// A downloaded song's cover comes from the phone (works offline, also in the notification).
+  static Uri? _artUriFor(Track track) {
+    final local = DownloadService.instance.coverPathOf(track.id);
+    if (local != null) return Uri.file(local);
+    return track.imageUrl.isEmpty ? null : Uri.tryParse(track.imageUrl);
   }
 
   static Duration _parseDuration(String duration) {

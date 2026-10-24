@@ -8,6 +8,7 @@ import 'package:xtify_app/screens/library_screen.dart';
 import 'package:xtify_app/services/audio_service.dart';
 import 'package:xtify_app/services/yt_dlp_update_service.dart';
 import 'package:xtify_app/services/audio_url_resolver.dart';
+import 'package:xtify_app/services/connectivity_service.dart';
 import 'package:xtify_app/services/cookie_service.dart';
 import 'package:xtify_app/services/cookie_refresh_service.dart';
 import 'package:xtify_app/services/history_service.dart';
@@ -28,6 +29,7 @@ void main() async {
     await _setupAudioService();
     // Initialize cookie service
     await CookieService.instance.init();
+    await ConnectivityService.instance.init();
     await AudioUrlResolver.loadPreferred();
     await HistoryService.instance.init();
     await ArtistMixService.instance.init();
@@ -46,7 +48,16 @@ void main() async {
     debugPrint('Extractor init error (will retry on first use): $e');
   });
   // Refresh home feeds in the background (cached for 6 hours)
-  FeedService.instance.refreshAll(); // one after the other, to go easy on the server
+  if (ConnectivityService.instance.online.value) {
+    FeedService.instance.refreshAll(); // one after the other, to go easy on the server
+  }
+  // back online: reload the lists once
+  var wasOnline = ConnectivityService.instance.online.value;
+  ConnectivityService.instance.online.addListener(() {
+    final now = ConnectivityService.instance.online.value;
+    if (now && !wasOnline) FeedService.instance.refreshAll();
+    wasOnline = now;
+  });
   // Check for yt-dlp updates in background (don't await)
   Future.delayed(const Duration(minutes: 3), YtDlpUpdateService.checkAndUpdate);
   Future.delayed(const Duration(minutes: 1), () => CookieRefreshService.instance.refreshIfOlderThan(const Duration(hours: 12)));

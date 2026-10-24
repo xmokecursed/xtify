@@ -4,6 +4,7 @@ import '../services/history_service.dart';
 import '../services/playlist_service.dart';
 import '../widgets/layout.dart';
 import '../widgets/media_tile.dart';
+import '../widgets/offline_banner.dart';
 import '../widgets/playlist_sheets.dart';
 import 'artist_screen.dart';
 import 'playlist_screen.dart';
@@ -27,6 +28,7 @@ class LibraryScreen extends StatelessWidget {
     return CustomScrollView(
       slivers: [
         const SliverToBoxAdapter(child: ScreenHeader(title: 'Library')),
+        const SliverToBoxAdapter(child: OfflineBanner()),
         SectionSliver(
           title: 'Playlists',
           trailing: TextButton.icon(

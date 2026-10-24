@@ -4,11 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/playlist_model.dart';
 import '../models/track_model.dart';
+import '../services/connectivity_service.dart';
+import '../services/download_service.dart';
 import '../services/feed_service.dart';
 import '../services/artist_mix_service.dart';
 import '../services/playlist_service.dart';
 import '../widgets/layout.dart';
 import '../widgets/media_tile.dart';
+import '../widgets/offline_banner.dart';
 import '../widgets/recently_played.dart';
 import '../widgets/track_carousel.dart';
 import 'artist_mix_screen.dart';
@@ -29,10 +32,28 @@ class HomeScreen extends StatelessWidget {
         }));
         await Future<void>.delayed(const Duration(milliseconds: 700));
       },
-      child: CustomScrollView(
+      child: ValueListenableBuilder<bool>(
+        valueListenable: ConnectivityService.instance.online,
+        builder: (context, online, _) => CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           const SliverToBoxAdapter(child: ScreenHeader(title: 'Home')),
+          const SliverToBoxAdapter(child: OfflineBanner()),
+          // offline: what can still play comes first, the web-based lists are hidden
+          if (!online)
+            SectionSliver(
+              title: 'Downloaded songs',
+              child: ValueListenableBuilder<Map<String, DownloadedItem>>(
+                valueListenable: DownloadService.instance.items,
+                builder: (_, items, _) => TrackCarousel(
+                  tracks: (items.values.toList()..sort((a, b) => b.atMs.compareTo(a.atMs)))
+                      .map((e) => e.track)
+                      .toList(),
+                  emptyText: 'Nothing downloaded yet.',
+                ),
+              ),
+            ),
+          if (online)
           SectionSliver(
             title: 'Made for you',
             subtitle: 'A mix for each artist you listen to',
@@ -113,6 +134,7 @@ class HomeScreen extends StatelessWidget {
               },
             ),
           ),
+          if (online)
           SectionSliver(
             title: 'Explore more',
             subtitle: 'Trending on Last.fm',
@@ -131,6 +153,7 @@ class HomeScreen extends StatelessWidget {
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 120)),
         ],
+        ),
       ),
     );
   }

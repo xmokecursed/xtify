@@ -18,12 +18,14 @@ class DownloadedItem {
   final String path;
   final int bytes;
   final int atMs;
+  final String coverPath; // cover image saved on the phone, '' when there is none
 
   const DownloadedItem({
     required this.track,
     required this.path,
     required this.bytes,
     required this.atMs,
+    this.coverPath = '',
   });
 
   Map<String, dynamic> toJson() => {
@@ -31,6 +33,7 @@ class DownloadedItem {
         'path': path,
         'bytes': bytes,
         'at': atMs,
+        'cover': coverPath,
       };
 
   static DownloadedItem? fromJson(Map<String, dynamic> m) {
@@ -40,6 +43,7 @@ class DownloadedItem {
         path: m['path'] as String,
         bytes: (m['bytes'] as num).toInt(),
         atMs: (m['at'] as num).toInt(),
+        coverPath: (m['cover'] as String?) ?? '',
       );
     } catch (_) {
       return null;
@@ -111,6 +115,8 @@ class DownloadService {
   final List<String> _queue = [];
   final Set<String> _cancelled = {};
   bool _working = false;
+  final Map<String, String> _coverByUrl = {}; // imageUrl -> local cover file
+  final Map<String, String> _coverById = {}; // video id -> local cover file
 
   Future<void> init() async {
     _support = await getApplicationSupportDirectory();
@@ -134,8 +140,26 @@ class DownloadService {
       debugPrint('downloads load failed: $e');
     }
     _publishFolder();
+    _reindexCovers();
+    items.addListener(_reindexCovers);
     await _syncPlaylist();
   }
+
+  void _reindexCovers() {
+    _coverByUrl.clear();
+    _coverById.clear();
+    for (final it in items.value.values) {
+      if (it.coverPath.isEmpty || !File(it.coverPath).existsSync()) continue;
+      if (it.track.imageUrl.isNotEmpty) _coverByUrl[it.track.imageUrl] = it.coverPath;
+      _coverById[it.track.id] = it.coverPath;
+    }
+  }
+
+  /// Local cover file for a picture URL of a downloaded song, or null.
+  String? coverFor(String url) => _coverByUrl[url];
+
+  /// Local cover file for a downloaded song, or null.
+  String? coverPathOf(String trackId) => _coverById[trackId];
 
   void _publishFolder() {
     folder.value = _custom ?? '${_support.path}/downloads';
@@ -244,6 +268,12 @@ class DownloadService {
       } catch (e) {
         debugPrint('could not delete ${it.path}: $e');
       }
+      if (it.coverPath.isNotEmpty) {
+        try {
+          final c = File(it.coverPath);
+          if (await c.exists()) await c.delete();
+        } catch (_) {}
+      }
       final next = {...items.value}..remove(id);
       items.value = next;
       await _saveItems();
@@ -350,8 +380,9 @@ class DownloadService {
     }
     if (path == null) throw Exception(errors.join(' | '));
 
-    // title, artist and cover go inside the file so other players show them
-    await _writeTags(t, path);
+    // title, artist and cover go inside the file so other players show them;
+    // the cover is also kept as a file so the app can show it offline
+    final cover = await _writeTags(t, path);
 
     final len = await File(path).length();
     items.value = {
@@ -361,6 +392,7 @@ class DownloadService {
         path: path,
         bytes: len,
         atMs: DateTime.now().millisecondsSinceEpoch,
+        coverPath: cover,
       ),
     };
     await _saveItems();
@@ -451,8 +483,9 @@ class DownloadService {
 
   /// Writes title / artist / album and the cover into the audio file.
   /// Never fails the download: a song without tags still plays fine.
-  Future<void> _writeTags(Track t, String path) async {
+  Future<String> _writeTags(Track t, String path) async {
     TagLibFile? file;
+    var coverPath = '';
     try {
       Uint8List? cover;
       String mime = 'image/jpeg';
@@ -473,8 +506,9 @@ class DownloadService {
           debugPrint('cover download failed for ${t.id}: $e');
         }
       }
+      if (cover != null) coverPath = await _saveCover(t.id, cover, mime);
       file = await TagLibFile.openAsync(path, writeAccess: true);
-      if (file == null) return; // format not supported (e.g. webm)
+      if (file == null) return coverPath; // format not supported (e.g. webm)
       file.title = t.title;
       if (t.artist.isNotEmpty) file.artist = t.artist;
       if (t.album.isNotEmpty) file.album = t.album;
@@ -487,6 +521,21 @@ class DownloadService {
       try {
         file?.close();
       } catch (_) {}
+    }
+    return coverPath;
+  }
+
+  /// Keeps the cover in the app's own folder (always writable, whatever the download folder is).
+  Future<String> _saveCover(String id, Uint8List bytes, String mime) async {
+    try {
+      final dir = Directory('${_support.path}/covers');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final f = File('${dir.path}/$id.${mime.contains('png') ? 'png' : 'jpg'}');
+      await f.writeAsBytes(bytes);
+      return f.path;
+    } catch (e) {
+      debugPrint('cover save failed for $id: $e');
+      return '';
     }
   }
 

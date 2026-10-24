@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import '../models/playlist_model.dart';
 import '../models/track_model.dart';
+import '../screens/queue_screen.dart';
 import '../services/artist_mix_service.dart';
+import '../services/audio_service.dart';
 import '../services/download_service.dart';
 import '../services/history_service.dart';
 import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
 import 'media_tile.dart';
+import 'youtube_link.dart';
 
 /// Asks for a playlist name. Returns null when cancelled.
 Future<String?> promptPlaylistName(BuildContext context, {String initial = ''}) {
@@ -165,9 +168,11 @@ Future<void> showTrackOptions(BuildContext context, Track track) {
   final messenger = ScaffoldMessenger.of(context);
   return showModalBottomSheet<void>(
     context: context,
+    isScrollControlled: true, // the menu has many rows: let it scroll on small phones
     builder: (sheetContext) {
       return SafeArea(
-        child: Column(
+        child: SingleChildScrollView(
+         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
@@ -227,6 +232,26 @@ Future<void> showTrackOptions(BuildContext context, Track track) {
             ListTile(
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+              leading: const Icon(Icons.playlist_play),
+              title: const Text('Play next'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _queueAction(context, messenger, track, next: true);
+              },
+            ),
+            ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+              leading: const Icon(Icons.queue_music),
+              title: const Text('Add to queue'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _queueAction(context, messenger, track, next: false);
+              },
+            ),
+            ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
               leading: const Icon(Icons.playlist_add),
               title: const Text('Add to playlist'),
               onTap: () {
@@ -234,6 +259,17 @@ Future<void> showTrackOptions(BuildContext context, Track track) {
                 if (context.mounted) showAddToPlaylistSheet(context, track);
               },
             ),
+            if (track.isPlayable)
+              ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+                leading: const Icon(Icons.open_in_new),
+                title: const Text('Open on YouTube'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  if (context.mounted) showYoutubeLink(context, track);
+                },
+              ),
             ValueListenableBuilder<List<Track>>(
               valueListenable: HistoryService.instance.tracks,
               builder: (context, _, _) => HistoryService.instance.contains(track.id)
@@ -290,8 +326,40 @@ Future<void> showTrackOptions(BuildContext context, Track track) {
             ),
             const SizedBox(height: 8),
           ],
+         ),
         ),
       );
     },
   );
+}
+
+/// "Play next" / "Add to queue" with a message and a way to open the queue.
+Future<void> _queueAction(BuildContext context, ScaffoldMessengerState messenger, Track track,
+    {required bool next}) async {
+  bool done;
+  try {
+    done = next
+        ? await XtifyAudioHandler.instance.playNext(track)
+        : await XtifyAudioHandler.instance.addToQueue(track);
+  } catch (e) {
+    messenger.showSnackBar(const SnackBar(content: Text('Could not start playback')));
+    return;
+  }
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(SnackBar(
+    content: Text(done
+        ? (next ? 'Will play next' : 'Added to queue')
+        : 'Already playing or in the queue'),
+    action: done
+        ? SnackBarAction(
+            label: 'View',
+            onPressed: () {
+              if (context.mounted) {
+                Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const QueueScreen()));
+              }
+            },
+          )
+        : null,
+  ));
 }
