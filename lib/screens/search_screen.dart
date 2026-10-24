@@ -226,18 +226,20 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
   FocusNode get _focus => widget.focusNode;
 
   void _onChanged() {
-    if (mounted) setState(() {}); // show/hide the X
+    if (mounted) setState(() {}); // show/hide the X, focus outline
   }
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onChanged);
+    _focus.addListener(_onChanged);
   }
 
   @override
   void dispose() {
     _controller.removeListener(_onChanged);
+    _focus.removeListener(_onChanged);
     super.dispose();
   }
 
@@ -255,10 +257,14 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AnimatedContainer(
+      duration: AppMotion.fast,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         color: AppColors.card,
+        border: Border.all(
+          color: _focus.hasFocus ? Colors.white24 : AppColors.hairline,
+        ),
       ),
       child: TextField(
         controller: _controller,
@@ -271,11 +277,11 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
           border: InputBorder.none,
           enabledBorder: InputBorder.none,
           focusedBorder: InputBorder.none,
-          prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+          prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textSecondary),
           suffixIcon: _controller.text.isEmpty
               ? null
               : IconButton(
-                  icon: const Icon(Icons.clear, color: AppColors.textSecondary),
+                  icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
                   onPressed: _clear,
                 ),
           contentPadding:

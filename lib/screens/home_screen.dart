@@ -37,7 +37,7 @@ class HomeScreen extends StatelessWidget {
         builder: (context, online, _) => CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          const SliverToBoxAdapter(child: ScreenHeader(title: 'Home')),
+          const SliverToBoxAdapter(child: ScreenHeader(title: 'Xtify', showLogo: true)),
           const SliverToBoxAdapter(child: OfflineBanner()),
           // offline: what can still play comes first, the web-based lists are hidden
           if (!online)

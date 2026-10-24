@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:xtify_app/screens/home_screen.dart';
 import 'package:xtify_app/screens/search_screen.dart';
@@ -85,8 +84,22 @@ class XtifyHome extends StatefulWidget {
   State<XtifyHome> createState() => _XtifyHomeState();
 }
 
-class _XtifyHomeState extends State<XtifyHome> {
+class _XtifyHomeState extends State<XtifyHome>
+    with SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
+  late final AnimationController _fadeCtl = AnimationController(
+    vsync: this,
+    duration: AppMotion.medium,
+    value: 1,
+  );
+  late final Animation<double> _fade =
+      CurvedAnimation(parent: _fadeCtl, curve: AppMotion.curve);
+
+  @override
+  void dispose() {
+    _fadeCtl.dispose();
+    super.dispose();
+  }
 
   static const List<Widget> _widgetOptions = <Widget>[
     HomeScreen(),
@@ -95,6 +108,8 @@ class _XtifyHomeState extends State<XtifyHome> {
   ];
 
   void _onItemTapped(int index) {
+    if (index == _selectedIndex) return;
+    _fadeCtl.forward(from: 0.35);
     setState(() {
       _selectedIndex = index;
     });
@@ -108,52 +123,45 @@ class _XtifyHomeState extends State<XtifyHome> {
           // Main content
           SafeArea(
             bottom: false,
-            // all tabs stay alive (scroll position kept); the active one fades in
-            child: Stack(
-              children: [
-                for (var i = 0; i < _widgetOptions.length; i++)
-                  IgnorePointer(
-                    ignoring: i != _selectedIndex,
-                    child: TickerMode(
-                      enabled: i == _selectedIndex,
-                      child: AnimatedOpacity(
-                        opacity: i == _selectedIndex ? 1 : 0,
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOut,
-                        child: _widgetOptions[i],
-                      ),
-                    ),
-                  ),
-              ],
+            // IndexedStack keeps every tab's scroll position and search results
+            child: FadeTransition(
+              opacity: _fade,
+              child: IndexedStack(
+                index: _selectedIndex,
+                children: _widgetOptions,
+              ),
             ),
           ),
           // Player sheet at the bottom
           PlayerSheet(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (i) {
-          HapticFeedback.selectionClick();
-          _onItemTapped(i);
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.search_outlined),
-            selectedIcon: Icon(Icons.search_rounded),
-            label: 'Search',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.library_music_outlined),
-            selectedIcon: Icon(Icons.library_music_rounded),
-            label: 'Library',
-          ),
-        ],
+      bottomNavigationBar: DecoratedBox(
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: AppColors.hairline)),
+        ),
+        child: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: _onItemTapped,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: 'Home',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.search_rounded),
+              selectedIcon: Icon(Icons.search_rounded, weight: 700),
+              label: 'Search',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.library_music_outlined),
+              selectedIcon: Icon(Icons.library_music_rounded),
+              label: 'Library',
+            ),
+          ],
+        ),
       ),
     );
   }

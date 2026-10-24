@@ -24,7 +24,7 @@ class ArtImage extends StatelessWidget {
     super.key,
     required this.url,
     required this.size,
-    this.radius = 12,
+    this.radius = AppRadius.art,
     this.circular = false,
     this.fallbackIcon = Icons.music_note,
   });
@@ -41,31 +41,39 @@ class ArtImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: circular ? BorderRadius.circular(size / 2) : asymRadius(radius),
+      borderRadius: BorderRadius.circular(circular ? size / 2 : radius),
       child: Container(
         width: size,
         height: size,
         color: AppColors.card,
+        foregroundDecoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(circular ? size / 2 : radius),
+          border: Border.all(color: AppColors.hairline),
+        ),
         child: url.isEmpty
             ? _fallback()
             : Image(
                 // a downloaded song's cover comes from the phone: instant and offline
-                image: _localCover(url) ??
-                    CachedNetworkImageProvider(
-                      url,
-                      maxWidth: (size * 3).round(),
-                      cacheManager: XtifyImageCache.instance,
-                    ),
+                image: url.startsWith('file://')
+                    ? ResizeImage(
+                        FileImage(File.fromUri(Uri.parse(url))),
+                        width: (size * 3).round(),
+                      )
+                    : _localCover(url) ??
+                        CachedNetworkImageProvider(
+                          url,
+                          maxWidth: (size * 3).round(),
+                          cacheManager: XtifyImageCache.instance,
+                        ),
                 width: size,
                 height: size,
                 fit: BoxFit.cover,
-                // fade the cover in instead of popping
                 frameBuilder: (_, child, frame, sync) => sync
                     ? child
                     : AnimatedOpacity(
                         opacity: frame == null ? 0 : 1,
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOut,
+                        duration: AppMotion.medium,
+                        curve: AppMotion.curve,
                         child: child,
                       ),
                 errorBuilder: (_, _, _) => _fallback(),
@@ -136,6 +144,7 @@ class MediaTile extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
+                  letterSpacing: -0.1,
                   color: Colors.white,
                 ),
               ),

@@ -28,7 +28,7 @@ class OfflineBanner extends StatelessWidget {
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.cloud_off, size: 20, color: Colors.orangeAccent),
+                    Icon(Icons.cloud_off, size: 20, color: Colors.white60),
                     SizedBox(width: 12),
                     Expanded(
                       child: Text(
