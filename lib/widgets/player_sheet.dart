@@ -1,3 +1,6 @@
+import 'package:flutter/services.dart';
+import '../theme/app_theme.dart';
+import 'pressable.dart';
 import 'download_widgets.dart';
 import 'media_tile.dart';
 import 'youtube_link.dart';
@@ -82,15 +85,17 @@ class _PlayerSheetState extends State<PlayerSheet> {
           builder: (context, scrollController) {
             return Container(
               decoration: BoxDecoration(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(20),
+                color: AppColors.surface,
+                border: const Border(top: BorderSide(color: AppColors.border)),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(36),
+                  topRight: Radius.circular(8),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 10,
-                    spreadRadius: 2,
+                    color: Colors.black.withValues(alpha: 0.55),
+                    blurRadius: 28,
+                    offset: const Offset(0, -6),
                   ),
                 ],
               ),
@@ -101,19 +106,18 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   // 40x5 rounded drag handle, centered, vertical margin 10
                   Container(
                     margin: const EdgeInsets.symmetric(vertical: 10),
-                    child: Center(
+                    child: Align(
+                      alignment: const Alignment(-0.82, 0),
                       child: Container(
                         width: 40,
                         height: 5,
                         decoration: BoxDecoration(
-                          color: Colors.grey.withValues(alpha: 0.5),
+                          color: Colors.white24,
                           borderRadius: BorderRadius.circular(2.5),
                         ),
                       ),
                     ),
                   ),
-                  // Divider
-                  const Divider(),
                   // Header row visible when collapsed (bold 18)
                   _buildHeader(context, signedIn, scrollController),
                   // Expanded content: progress indicator, details, controls
@@ -205,14 +209,14 @@ class _PlayerSheetState extends State<PlayerSheet> {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: asymRadius(10),
                   image: mediaItem.artUri != null
                       ? DecorationImage(
                           image: artProviderFor(mediaItem.artUri.toString()),
                           fit: BoxFit.cover,
                         )
                       : null,
-                  color: Colors.grey,
+                  color: AppColors.card,
                 ),
                 child: mediaItem.artUri == null
                     ? const Icon(
@@ -233,7 +237,8 @@ class _PlayerSheetState extends State<PlayerSheet> {
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -242,8 +247,8 @@ class _PlayerSheetState extends State<PlayerSheet> {
                     Text(
                       mediaItem.artist ?? 'Unknown Artist',
                       style: const TextStyle(
-                        color: Colors.grey,
-                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -251,20 +256,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   ],
                 ),
               ),
-              IconButton(
-                icon: Icon(
-                  playbackState.playing
-                      ? Icons.pause_circle_outline
-                      : Icons.play_circle_outline,
-                ),
-                onPressed: () {
-                  if (playbackState.playing) {
-                    XtifyAudioHandler.instance.pause();
-                  } else {
-                    XtifyAudioHandler.instance.play();
-                  }
-                },
-              ),
+              _PlayButton(playing: playbackState.playing, size: 42),
             ],
           ),
         );
@@ -274,36 +266,51 @@ class _PlayerSheetState extends State<PlayerSheet> {
 
   Widget _buildExpandedContent(BuildContext context, ScrollController scrollController) {
     return Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 40, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Large art
           StreamBuilder<MediaItem?>(
             stream: XtifyAudioHandler.instance.mediaItem,
             builder: (context, snapshot) {
               final mediaItem = snapshot.data;
-              return Container(
-                width: double.infinity,
-                height: 200,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  image: mediaItem?.artUri != null
-                      ? DecorationImage(
-                          image: artProviderFor(mediaItem!.artUri.toString()),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                  color: Colors.grey,
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  child: Container(
+                    key: ValueKey(mediaItem?.artUri),
+                    width: 300,
+                    height: 340,
+                    margin: const EdgeInsets.only(top: 8, bottom: 24),
+                    decoration: BoxDecoration(
+                      borderRadius: asymRadius(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          blurRadius: 32,
+                          offset: const Offset(0, 14),
+                        ),
+                      ],
+                      image: mediaItem?.artUri != null
+                          ? DecorationImage(
+                              image: artProviderFor(mediaItem!.artUri.toString()),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                      color: AppColors.card,
+                    ),
+                    child: mediaItem?.artUri == null
+                        ? const Icon(
+                            Icons.music_note,
+                            size: 64,
+                            color: Colors.white38,
+                          )
+                        : null,
+                  ),
                 ),
-                child: mediaItem?.artUri == null
-                    ? const Icon(
-                        Icons.music_note,
-                        size: 64,
-                        color: Colors.white54,
-                      )
-                    : null,
               );
             },
           ),
@@ -316,28 +323,28 @@ class _PlayerSheetState extends State<PlayerSheet> {
                 return const SizedBox.shrink();
               }
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     mediaItem.title,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.6,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 4),
                   Text(
                     mediaItem.artist ?? 'Unknown Artist',
                     style: const TextStyle(
-                      color: Colors.grey,
+                      color: AppColors.textSecondary,
                       fontSize: 16,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
                   ),
                 ],
               );
@@ -362,11 +369,17 @@ class _PlayerSheetState extends State<PlayerSheet> {
                     onSeek: (position) async {
                       await XtifyAudioHandler.instance.seek(position);
                     },
-                    barHeight: 3.0,
-                    baseBarColor: Colors.grey.withValues(alpha: 0.5),
-                    progressBarColor: Colors.white,
+                    barHeight: 4.0,
+                    baseBarColor: Colors.white12,
+                    bufferedBarColor: Colors.white24,
+                    progressBarColor: AppColors.accent,
+                    thumbColor: Colors.white,
                     thumbGlowColor: Colors.transparent,
-                    thumbRadius: 6.0,
+                    thumbRadius: 7.0,
+                    timeLabelTextStyle: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
                   );
                 },
               );
@@ -382,49 +395,34 @@ class _PlayerSheetState extends State<PlayerSheet> {
               }
               final PlaybackState playbackState = snapshot.data!;
 
+              // big play button hard left, skips next to it, extras pushed right
               return Row(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Builder(builder: (context) {
-                    final t = XtifyAudioHandler.instance.currentTrack;
-                    return t == null
-                        ? const SizedBox(width: 48)
-                        : FavouriteButton(track: t, size: 26);
-                  }),
-                  const SizedBox(width: 4),
+                  _PlayButton(playing: playbackState.playing, size: 64),
+                  const SizedBox(width: 10),
                   IconButton(
-                    icon: const Icon(Icons.skip_previous, size: 28),
+                    icon: const Icon(Icons.skip_previous_rounded, size: 36),
                     onPressed: () {
+                      HapticFeedback.selectionClick();
                       XtifyAudioHandler.instance.skipToPrevious();
                     },
                     color: Colors.white,
                   ),
-                  const SizedBox(width: 4),
                   IconButton(
-                    icon: Icon(
-                      playbackState.playing
-                          ? Icons.pause_circle_outline
-                          : Icons.play_circle_outline,
-                      size: 28,
-                    ),
+                    icon: const Icon(Icons.skip_next_rounded, size: 36),
                     onPressed: () {
-                      if (playbackState.playing) {
-                        XtifyAudioHandler.instance.pause();
-                      } else {
-                        XtifyAudioHandler.instance.play();
-                      }
-                    },
-                    color: Colors.white,
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    icon: const Icon(Icons.skip_next, size: 28),
-                    onPressed: () {
+                      HapticFeedback.selectionClick();
                       XtifyAudioHandler.instance.skipToNext();
                     },
                     color: Colors.white,
                   ),
-                  const SizedBox(width: 8),
+                  const Spacer(),
+                  Builder(builder: (context) {
+                    final t = XtifyAudioHandler.instance.currentTrack;
+                    return t == null
+                        ? const SizedBox(width: 40)
+                        : FavouriteButton(track: t, size: 26);
+                  }),
                   IconButton(
                     icon: const Icon(Icons.playlist_add, size: 26),
                     tooltip: 'Add to playlist',
@@ -437,7 +435,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   Builder(builder: (context) {
                     final t = XtifyAudioHandler.instance.currentTrack;
                     return t == null
-                        ? const SizedBox(width: 48)
+                        ? const SizedBox(width: 40)
                         : DownloadButton(track: t, size: 26);
                   }),
                 ],
@@ -452,8 +450,9 @@ class _PlayerSheetState extends State<PlayerSheet> {
             'Up next',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3,
             ),
           ),
           const SizedBox(height: 8),
@@ -486,7 +485,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
                               finding
                                   ? 'Finding the next song…'
                                   : 'The next song is picked automatically',
-                              style: const TextStyle(color: Colors.grey, fontSize: 14),
+                              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
                             ),
                           ),
                         ],
@@ -522,7 +521,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
                           ),
                           subtitle: Text(
                             upcoming[i].artist ?? 'Unknown Artist',
-                            style: const TextStyle(color: Colors.grey, fontSize: 12),
+                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
                           ),
                         ),
                     ],
@@ -537,6 +536,43 @@ class _PlayerSheetState extends State<PlayerSheet> {
   }
 }
 
+/// Round white play/pause button; the icon swaps with a little pop.
+class _PlayButton extends StatelessWidget {
+  final bool playing;
+  final double size;
+  const _PlayButton({required this.playing, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      scale: 0.9,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        if (playing) {
+          XtifyAudioHandler.instance.pause();
+        } else {
+          XtifyAudioHandler.instance.play();
+        }
+      },
+      child: Container(
+        width: size,
+        height: size,
+        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
+          child: Icon(
+            playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            key: ValueKey(playing),
+            color: Colors.black,
+            size: size * 0.62,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Shuffle, repeat, queue and the original YouTube link, under the main controls.
 class _UtilityRow extends StatelessWidget {
   const _UtilityRow();
@@ -544,10 +580,9 @@ class _UtilityRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final h = XtifyAudioHandler.instance;
-    const on = Colors.greenAccent;
-    const off = Colors.white54;
+    const on = AppColors.accent;
+    const off = Colors.white38;
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         ValueListenableBuilder<bool>(
           valueListenable: h.shuffleOn,
@@ -572,6 +607,7 @@ class _UtilityRow extends StatelessWidget {
             onPressed: h.cycleRepeat,
           ),
         ),
+        const Spacer(),
         ValueListenableBuilder<List<Track>>(
           valueListenable: h.upNextQueue,
           builder: (_, queue, _) => IconButton(

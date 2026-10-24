@@ -18,14 +18,15 @@ class ScreenHeader extends StatelessWidget {
           Text(
             title,
             style: const TextStyle(
-              fontSize: 32,
+              fontSize: 36,
               fontWeight: FontWeight.w800,
+              letterSpacing: -1.2,
               color: Colors.white,
             ),
           ),
           if (subtitle != null)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
+              padding: const EdgeInsets.only(top: 6, left: 40),
               child: Text(
                 subtitle!,
                 style: const TextStyle(fontSize: 15, color: AppColors.textSecondary),
@@ -59,14 +60,16 @@ class SectionHeader extends StatelessWidget {
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 20,
+                    fontSize: 21,
                     fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
                     color: Colors.white,
                   ),
                 ),
                 if (subtitle != null)
                   Padding(
-                    padding: const EdgeInsets.only(top: 3),
+                    // hanging indent: the subtitle sits further in than the title
+                    padding: const EdgeInsets.only(top: 3, left: 28),
                     child: Text(
                       subtitle!,
                       style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
@@ -120,6 +123,8 @@ class HList extends StatelessWidget {
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
 
+  static const double _drop = 22;
+
   const HList({
     super.key,
     required this.height,
@@ -130,13 +135,18 @@ class HList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: height,
+      height: height + _drop,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+        // more room on the left than the right
+        padding: const EdgeInsets.only(left: AppSpacing.screen + 8, right: 8),
         itemCount: itemCount,
         separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.gap),
-        itemBuilder: itemBuilder,
+        // every second tile sits lower, so the row zigzags
+        itemBuilder: (context, i) => Padding(
+          padding: EdgeInsets.only(top: i.isOdd ? _drop : 0),
+          child: itemBuilder(context, i),
+        ),
       ),
     );
   }

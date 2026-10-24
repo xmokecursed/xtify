@@ -2,11 +2,22 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   static const Color black = Color(0xFF000000);
-  static const Color surface = Color(0xFF121212);
-  static const Color card = Color(0xFF1C1C1E);
-  static const Color border = Color(0xFF2C2C2E);
-  static const Color textSecondary = Color(0xFF9A9AA0);
+  static const Color surface = Color(0xFF0D0D0D);
+  static const Color card = Color(0xFF171717);
+  static const Color border = Color(0xFF282828);
+  static const Color textSecondary = Color(0xFF8E8E8E);
+
+  /// Black and white only: "accent" is just white.
+  static const Color accent = Colors.white;
 }
+
+/// Uneven corners: big top-left and bottom-right, nearly square on the others.
+BorderRadius asymRadius(double r) => BorderRadius.only(
+      topLeft: Radius.circular(r * 2.2),
+      topRight: Radius.circular(r * 0.35),
+      bottomRight: Radius.circular(r * 2.2),
+      bottomLeft: Radius.circular(r * 0.35),
+    );
 
 class AppSpacing {
   /// Left and right padding on every screen.
@@ -39,6 +50,30 @@ ThemeData buildAppTheme() {
     canvasColor: AppColors.surface,
     iconTheme: const IconThemeData(color: Colors.white),
     dividerColor: AppColors.border,
+    highlightColor: Colors.transparent,
+    pageTransitionsTheme: const PageTransitionsTheme(builders: {
+      TargetPlatform.android: ZoomPageTransitionsBuilder(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    }),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: AppColors.black,
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: Colors.white.withValues(alpha: 0.14),
+      labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
+      height: 64,
+      iconTheme: WidgetStateProperty.resolveWith((s) => IconThemeData(
+            color: s.contains(WidgetState.selected)
+                ? AppColors.accent
+                : AppColors.textSecondary,
+          )),
+      labelTextStyle: WidgetStateProperty.resolveWith((s) => TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: s.contains(WidgetState.selected)
+                ? Colors.white
+                : AppColors.textSecondary,
+          )),
+    ),
     appBarTheme: const AppBarTheme(
       backgroundColor: AppColors.black,
       surfaceTintColor: Colors.transparent,
@@ -52,15 +87,6 @@ ThemeData buildAppTheme() {
         fontWeight: FontWeight.w700,
       ),
     ),
-    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-      backgroundColor: AppColors.black,
-      selectedItemColor: Colors.white,
-      unselectedItemColor: AppColors.textSecondary,
-      type: BottomNavigationBarType.fixed,
-      elevation: 0,
-      selectedLabelStyle: TextStyle(fontSize: 12),
-      unselectedLabelStyle: TextStyle(fontSize: 12),
-    ),
     textTheme: const TextTheme(
       bodyLarge: TextStyle(color: Colors.white),
       bodyMedium: TextStyle(color: AppColors.textSecondary),
@@ -68,6 +94,7 @@ ThemeData buildAppTheme() {
         color: Colors.white,
         fontSize: 20,
         fontWeight: FontWeight.bold,
+        letterSpacing: -0.4,
       ),
       titleMedium: TextStyle(
         color: Colors.white,
@@ -80,7 +107,7 @@ ThemeData buildAppTheme() {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: asymRadius(11)),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -88,7 +115,7 @@ ThemeData buildAppTheme() {
         foregroundColor: Colors.white,
         side: const BorderSide(color: AppColors.border),
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: asymRadius(11)),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
@@ -98,7 +125,10 @@ ThemeData buildAppTheme() {
       backgroundColor: AppColors.surface,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(36),
+          topRight: Radius.circular(8),
+        ),
       ),
     ),
     snackBarTheme: SnackBarThemeData(
@@ -112,7 +142,7 @@ ThemeData buildAppTheme() {
       color: AppColors.card,
       surfaceTintColor: Colors.transparent,
     ),
-    progressIndicatorTheme: const ProgressIndicatorThemeData(color: Colors.white),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(color: AppColors.accent),
     listTileTheme: const ListTileThemeData(
       iconColor: Colors.white,
       textColor: Colors.white,
