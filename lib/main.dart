@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:xtify_app/screens/home_screen.dart';
 import 'package:xtify_app/screens/search_screen.dart';
@@ -25,6 +26,12 @@ void main() async {
   // Keep decoded thumbnails in RAM small
   PaintingBinding.instance.imageCache.maximumSize = 120;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 60 << 20;
+  
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+  
   try {
     await _setupAudioService();
     // Initialize cookie service
