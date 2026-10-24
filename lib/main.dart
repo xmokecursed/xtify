@@ -73,6 +73,7 @@ class XtifyApp extends StatelessWidget {
       theme: buildAppTheme(),
       themeMode: ThemeMode.dark,
       home: const XtifyHome(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
