@@ -115,24 +115,37 @@ class PlaylistScreen extends StatelessWidget {
                         Padding(
                           padding: const EdgeInsets.fromLTRB(
                               AppSpacing.screen, 8, AppSpacing.screen, 12),
-                          child: Row(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              FilledButton.icon(
-                                onPressed: () => _play(context, p),
-                                icon: const Icon(Icons.play_arrow),
-                                label: const Text('Play'),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(
+                                  p.tracks.length == 1
+                                      ? '1 song'
+                                      : '${p.tracks.length} songs',
+                                  style: const TextStyle(
+                                      fontSize: 13, color: AppColors.textSecondary),
+                                ),
                               ),
-                              const SizedBox(width: 12),
-                              OutlinedButton.icon(
-                                onPressed: () => _play(context, p, shuffle: true),
-                                icon: const Icon(Icons.shuffle),
-                                label: const Text('Shuffle'),
-                              ),
-                              const Spacer(),
-                              Text(
-                                '${p.tracks.length} songs',
-                                style: const TextStyle(
-                                    fontSize: 13, color: AppColors.textSecondary),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: FilledButton.icon(
+                                      onPressed: () => _play(context, p),
+                                      icon: const Icon(Icons.play_arrow_rounded),
+                                      label: const Text('Play'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppSpacing.gap),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => _play(context, p, shuffle: true),
+                                      icon: const Icon(Icons.shuffle_rounded),
+                                      label: const Text('Shuffle'),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

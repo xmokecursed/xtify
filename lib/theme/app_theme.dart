@@ -1,24 +1,30 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 
 class AppColors {
   static const Color black = Color(0xFF000000);
-  static const Color surface = Color(0xFF0D0D0D);
-  static const Color card = Color(0xFF171717);
-  static const Color border = Color(0xFF282828);
-  static const Color textSecondary = Color(0xFF8E8E8E);
+  static const Color surface = Color(0xFF121212);
+  static const Color card = Color(0xFF1C1C1E);
+  static const Color border = Color(0xFF2C2C2E);
+  static const Color textSecondary = Color(0xFF9A9AA0);
+  static const Color textTertiary = Color(0xFF636368);
 
-  /// Black and white only: "accent" is just white.
-  static const Color accent = Colors.white;
+  /// Barely-there white used for hairlines and pressed states.
+  static const Color hairline = Color(0x1FFFFFFF);
+  static const Color highlight = Color(0x14FFFFFF);
 }
 
-/// Uneven corners: big top-left and bottom-right, nearly square on the others.
-BorderRadius asymRadius(double r) => BorderRadius.only(
-      topLeft: Radius.circular(r * 2.2),
-      topRight: Radius.circular(r * 0.35),
-      bottomRight: Radius.circular(r * 2.2),
-      bottomLeft: Radius.circular(r * 0.35),
-    );
+class AppRadius {
+  static const double art = 14;
+  static const double card = 18;
+  static const double sheet = 28;
+}
+
+class AppMotion {
+  static const Duration fast = Duration(milliseconds: 180);
+  static const Duration medium = Duration(milliseconds: 320);
+  static const Curve curve = Curves.easeOutCubic;
+}
 
 class AppSpacing {
   /// Left and right padding on every screen.
@@ -49,32 +55,15 @@ ThemeData buildAppTheme() {
     colorScheme: scheme,
     scaffoldBackgroundColor: AppColors.black,
     canvasColor: AppColors.surface,
-    iconTheme: const IconThemeData(color: Colors.white),
-    dividerColor: AppColors.border,
-    highlightColor: Colors.transparent,
+    splashFactory: NoSplash.splashFactory,
+    splashColor: Colors.transparent,
+    highlightColor: AppColors.highlight,
     pageTransitionsTheme: const PageTransitionsTheme(builders: {
-      TargetPlatform.android: ZoomPageTransitionsBuilder(),
+      TargetPlatform.android: CupertinoPageTransitionsBuilder(),
       TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
     }),
-    navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: AppColors.black,
-      surfaceTintColor: Colors.transparent,
-      indicatorColor: Colors.white.withValues(alpha: 0.14),
-      labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-      height: 64,
-      iconTheme: WidgetStateProperty.resolveWith((s) => IconThemeData(
-            color: s.contains(WidgetState.selected)
-                ? AppColors.accent
-                : AppColors.textSecondary,
-          )),
-      labelTextStyle: WidgetStateProperty.resolveWith((s) => TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: s.contains(WidgetState.selected)
-                ? Colors.white
-                : AppColors.textSecondary,
-          )),
-    ),
+    iconTheme: const IconThemeData(color: Colors.white),
+    dividerColor: AppColors.border,
     appBarTheme: const AppBarTheme(
       backgroundColor: AppColors.black,
       surfaceTintColor: Colors.transparent,
@@ -86,7 +75,40 @@ ThemeData buildAppTheme() {
         color: Colors.white,
         fontSize: 20,
         fontWeight: FontWeight.w700,
+        letterSpacing: -0.3,
       ),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: AppColors.black,
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: Colors.transparent,
+      elevation: 0,
+      height: 64,
+      labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
+            fontSize: 11,
+            letterSpacing: 0.2,
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w700
+                : FontWeight.w500,
+            color: states.contains(WidgetState.selected)
+                ? Colors.white
+                : AppColors.textTertiary,
+          )),
+      iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
+            size: 24,
+            color: states.contains(WidgetState.selected)
+                ? Colors.white
+                : AppColors.textTertiary,
+          )),
+    ),
+    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      backgroundColor: AppColors.black,
+      selectedItemColor: Colors.white,
+      unselectedItemColor: AppColors.textSecondary,
+      type: BottomNavigationBarType.fixed,
+      elevation: 0,
+      selectedLabelStyle: TextStyle(fontSize: 12),
+      unselectedLabelStyle: TextStyle(fontSize: 12),
     ),
     textTheme: const TextTheme(
       bodyLarge: TextStyle(color: Colors.white),
@@ -95,7 +117,6 @@ ThemeData buildAppTheme() {
         color: Colors.white,
         fontSize: 20,
         fontWeight: FontWeight.bold,
-        letterSpacing: -0.4,
       ),
       titleMedium: TextStyle(
         color: Colors.white,
@@ -108,7 +129,7 @@ ThemeData buildAppTheme() {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: asymRadius(11)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -116,7 +137,7 @@ ThemeData buildAppTheme() {
         foregroundColor: Colors.white,
         side: const BorderSide(color: AppColors.border),
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: asymRadius(11)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
@@ -126,24 +147,34 @@ ThemeData buildAppTheme() {
       backgroundColor: AppColors.surface,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(36),
-          topRight: Radius.circular(8),
-        ),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
       ),
+      showDragHandle: true,
+      dragHandleColor: Color(0x33FFFFFF),
+      dragHandleSize: Size(40, 4),
+    ),
+    sliderTheme: const SliderThemeData(
+      trackHeight: 3,
+      activeTrackColor: Colors.white,
+      inactiveTrackColor: Color(0x33FFFFFF),
+      thumbColor: Colors.white,
+      overlayShape: RoundSliderOverlayShape(overlayRadius: 14),
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: AppColors.card,
       contentTextStyle: const TextStyle(color: Colors.white, fontSize: 14),
       actionTextColor: Colors.white,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: AppColors.hairline),
+      ),
     ),
     popupMenuTheme: const PopupMenuThemeData(
       color: AppColors.card,
       surfaceTintColor: Colors.transparent,
     ),
-    progressIndicatorTheme: const ProgressIndicatorThemeData(color: AppColors.accent),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(color: Colors.white),
     listTileTheme: const ListTileThemeData(
       iconColor: Colors.white,
       textColor: Colors.white,

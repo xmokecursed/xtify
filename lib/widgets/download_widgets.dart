@@ -39,7 +39,7 @@ class DownloadButton extends StatelessWidget {
         final task = svc.tasks.value[track.id];
         if (svc.isDownloaded(track.id)) {
           icon = Icon(Icons.download_done,
-              key: const ValueKey('done'), size: size, color: Colors.greenAccent);
+              key: const ValueKey('done'), size: size, color: Colors.white);
           tip = 'Downloaded';
           onTap = () => say(
                 'Saved on this phone',
@@ -55,7 +55,7 @@ class DownloadButton extends StatelessWidget {
           onTap = () => svc.cancel(track.id);
         } else if (task != null) {
           icon = Icon(Icons.error_outline,
-              key: const ValueKey('failed'), size: size, color: Colors.orangeAccent);
+              key: const ValueKey('failed'), size: size, color: Colors.white60);
           tip = 'Download failed, tap to retry';
           onTap = () {
             svc.enqueue(track);
@@ -127,7 +127,7 @@ class _ProgressRing extends StatelessWidget {
                 child: CircularProgressIndicator(
                   value: v,
                   strokeWidth: 2.4,
-                  color: Colors.greenAccent,
+                  color: Colors.white,
                   backgroundColor: Colors.white24,
                 ),
               ),
@@ -154,7 +154,7 @@ class _SmoothBar extends StatelessWidget {
         child: value == null
             ? const LinearProgressIndicator(
                 minHeight: 5,
-                color: Colors.greenAccent,
+                color: Colors.white,
                 backgroundColor: Colors.white12,
               )
             : TweenAnimationBuilder<double>(
@@ -346,7 +346,7 @@ class _ActiveCard extends StatelessWidget {
                         style: const TextStyle(
                             fontSize: 11,
                             letterSpacing: 0.4,
-                            color: Colors.greenAccent)),
+                            color: Colors.white)),
                     const SizedBox(height: 2),
                     Text(
                       task.track.title,
@@ -401,12 +401,12 @@ class _ResultCard extends StatelessWidget {
                   height: 44,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: (ok ? Colors.greenAccent : Colors.orangeAccent)
+                    color: (ok ? Colors.white : Colors.white60)
                         .withValues(alpha: 0.18),
                   ),
                   child: Icon(
                     ok ? Icons.check_rounded : Icons.priority_high_rounded,
-                    color: ok ? Colors.greenAccent : Colors.orangeAccent,
+                    color: ok ? Colors.white : Colors.white60,
                     size: 26,
                   ),
                 ),
@@ -421,7 +421,7 @@ class _ResultCard extends StatelessWidget {
                         style: TextStyle(
                             fontSize: 11,
                             letterSpacing: 0.4,
-                            color: ok ? Colors.greenAccent : Colors.orangeAccent)),
+                            color: ok ? Colors.white : Colors.white60)),
                     const SizedBox(height: 2),
                     Text(
                       event.track.title,
@@ -528,7 +528,7 @@ class _QueueRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         fontSize: 12,
-                        color: failed ? Colors.orangeAccent : AppColors.textSecondary),
+                        color: failed ? Colors.white60 : AppColors.textSecondary),
                   ),
                   if (!failed) ...[
                     const SizedBox(height: 6),

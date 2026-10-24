@@ -129,7 +129,7 @@ class _NowPlaying extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-                trailing: const Icon(Icons.graphic_eq, color: Colors.greenAccent),
+                trailing: const Icon(Icons.graphic_eq, color: Colors.white),
               ),
             const Padding(
               padding: EdgeInsets.fromLTRB(AppSpacing.screen, 12, AppSpacing.screen, 4),

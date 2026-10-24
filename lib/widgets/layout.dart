@@ -6,7 +6,15 @@ class ScreenHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
 
-  const ScreenHeader({super.key, required this.title, this.subtitle});
+  /// Shows the Xtify logo before the title (used on Home).
+  final bool showLogo;
+
+  const ScreenHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.showLogo = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -15,18 +23,27 @@ class ScreenHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 36,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -1.2,
-              color: Colors.white,
-            ),
+          Row(
+            children: [
+              if (showLogo) ...[
+                const XtifyLogo(size: 36),
+                const SizedBox(width: 12),
+              ],
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1,
+                  height: 1.1,
+                  color: Colors.white,
+                ),
+              ),
+            ],
           ),
           if (subtitle != null)
             Padding(
-              padding: const EdgeInsets.only(top: 6, left: 40),
+              padding: const EdgeInsets.only(top: 6),
               child: Text(
                 subtitle!,
                 style: const TextStyle(fontSize: 15, color: AppColors.textSecondary),
@@ -60,16 +77,15 @@ class SectionHeader extends StatelessWidget {
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 21,
+                    fontSize: 20,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: -0.5,
+                    letterSpacing: -0.4,
                     color: Colors.white,
                   ),
                 ),
                 if (subtitle != null)
                   Padding(
-                    // hanging indent: the subtitle sits further in than the title
-                    padding: const EdgeInsets.only(top: 3, left: 28),
+                    padding: const EdgeInsets.only(top: 3),
                     child: Text(
                       subtitle!,
                       style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
@@ -103,14 +119,16 @@ class SectionSliver extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.section),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SectionHeader(title: title, subtitle: subtitle, trailing: trailing),
-            child,
-          ],
+      child: FadeSlideIn(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.section),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SectionHeader(title: title, subtitle: subtitle, trailing: trailing),
+              child,
+            ],
+          ),
         ),
       ),
     );
@@ -123,8 +141,6 @@ class HList extends StatelessWidget {
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
 
-  static const double _drop = 22;
-
   const HList({
     super.key,
     required this.height,
@@ -135,18 +151,13 @@ class HList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: height + _drop,
+      height: height,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        // more room on the left than the right
-        padding: const EdgeInsets.only(left: AppSpacing.screen + 8, right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
         itemCount: itemCount,
         separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.gap),
-        // every second tile sits lower, so the row zigzags
-        itemBuilder: (context, i) => Padding(
-          padding: EdgeInsets.only(top: i.isOdd ? _drop : 0),
-          child: itemBuilder(context, i),
-        ),
+        itemBuilder: itemBuilder,
       ),
     );
   }
@@ -180,6 +191,61 @@ class EmptyHint extends StatelessWidget {
                 ),
         ),
       ),
+    );
+  }
+}
+
+
+/// The round Xtify logo.
+class XtifyLogo extends StatelessWidget {
+  final double size;
+  const XtifyLogo({super.key, this.size = 36});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: ClipOval(
+        child: Image.asset(
+          'assets/icon/logo.png',
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          cacheWidth: (size * 3).round(),
+          errorBuilder: (_, _, _) =>
+              Icon(Icons.graphic_eq, size: size * 0.6, color: Colors.white),
+        ),
+      ),
+    );
+  }
+}
+
+/// Fades its child in with a small upward slide, once, when it first appears.
+class FadeSlideIn extends StatelessWidget {
+  final Widget child;
+  final Duration duration;
+  const FadeSlideIn({
+    super.key,
+    required this.child,
+    this.duration = const Duration(milliseconds: 420),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: duration,
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(offset: Offset(0, (1 - t) * 14), child: child),
+      ),
+      child: child,
     );
   }
 }

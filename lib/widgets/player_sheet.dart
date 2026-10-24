@@ -1,20 +1,24 @@
-import 'package:flutter/services.dart';
-import '../theme/app_theme.dart';
-import 'pressable.dart';
+import 'dart:math' as math;
 import 'download_widgets.dart';
 import 'media_tile.dart';
+import 'pressable.dart';
 import 'youtube_link.dart';
 import '../screens/queue_screen.dart';
 import '../models/track_model.dart';
+import '../theme/app_theme.dart';
 import 'favourite_button.dart';
 import 'playlist_sheets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
 import 'package:xtify_app/services/audio_service.dart';
 import 'package:xtify_app/services/cookie_service.dart';
 import 'package:xtify_app/screens/youtube_login_screen.dart';
 import 'package:rxdart/rxdart.dart';
+
+const double _collapsedFraction = 0.11;
+const double _expandedFraction = 0.70;
 
 class PlayerSheet extends StatefulWidget {
   const PlayerSheet({super.key});
@@ -24,20 +28,32 @@ class PlayerSheet extends StatefulWidget {
 }
 
 class _PlayerSheetState extends State<PlayerSheet> {
-  // How far the sheet is pulled up (0.11 = collapsed); the download banner hides when it is open.
-  final ValueNotifier<double> _extent = ValueNotifier<double>(0.11);
+  // How far the sheet is pulled up; the download banner hides when it is open.
+  final ValueNotifier<double> _extent = ValueNotifier<double>(_collapsedFraction);
+  final DraggableScrollableController _ctl = DraggableScrollableController();
 
   @override
   void dispose() {
     _extent.dispose();
+    _ctl.dispose();
     super.dispose();
+  }
+
+  void _expand() {
+    if (!_ctl.isAttached) return;
+    _ctl.animateTo(
+      _expandedFraction,
+      duration: AppMotion.medium,
+      curve: AppMotion.curve,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, c) {
-        final collapsed = c.maxHeight.isFinite ? c.maxHeight * 0.11 : 90.0;
+        final collapsed =
+            c.maxHeight.isFinite ? c.maxHeight * _collapsedFraction : 90.0;
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -77,23 +93,26 @@ class _PlayerSheetState extends State<PlayerSheet> {
       valueListenable: CookieService.instance.signedInListener,
       builder: (context, signedIn, child) {
         return DraggableScrollableSheet(
-          initialChildSize: signedIn ? 0.11 : 0.11,
-          minChildSize: signedIn ? 0.11 : 0.11,
-          maxChildSize: signedIn ? 0.70 : 0.11,
+          controller: _ctl,
+          initialChildSize: _collapsedFraction,
+          minChildSize: _collapsedFraction,
+          maxChildSize: signedIn ? _expandedFraction : _collapsedFraction,
           snap: signedIn,
-          snapSizes: signedIn ? [0.11, 0.70] : null,
+          snapSizes: signedIn ? [_collapsedFraction, _expandedFraction] : null,
           builder: (context, scrollController) {
             return Container(
               decoration: BoxDecoration(
-                color: AppColors.surface,
-                border: const Border(top: BorderSide(color: AppColors.border)),
+                color: const Color(0xFF0C0C0C),
                 borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(28),
+                  top: Radius.circular(AppRadius.sheet),
+                ),
+                border: const Border(
+                  top: BorderSide(color: AppColors.hairline),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    blurRadius: 28,
+                    color: Colors.black.withValues(alpha: 0.6),
+                    blurRadius: 24,
                     offset: const Offset(0, -6),
                   ),
                 ],
@@ -102,25 +121,24 @@ class _PlayerSheetState extends State<PlayerSheet> {
                 controller: scrollController,
                 padding: EdgeInsets.zero,
                 children: [
-                  // 40x5 rounded drag handle, centered, vertical margin 10
-                  Container(
-                    margin: const EdgeInsets.symmetric(vertical: 10),
-                    child: Align(
-                      alignment: const Alignment(-0.82, 0),
+                  // drag handle
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 6),
+                    child: Center(
                       child: Container(
-                        width: 40,
-                        height: 5,
+                        width: 36,
+                        height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(2.5),
+                          color: Colors.white.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                     ),
                   ),
-                  // Header row visible when collapsed (bold 18)
-                  _buildHeader(context, signedIn, scrollController),
-                  // Expanded content: progress indicator, details, controls
-                  if (signedIn) _buildExpandedContent(context, scrollController),
+                  // Mini player (always visible); tap to open
+                  _buildHeader(context, signedIn),
+                  // Expanded content
+                  if (signedIn) _buildExpandedContent(context),
                 ],
               ),
             );
@@ -130,22 +148,26 @@ class _PlayerSheetState extends State<PlayerSheet> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, bool signedIn, ScrollController scrollController) {
+  Widget _buildHeader(BuildContext context, bool signedIn) {
     if (!signedIn) {
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen, vertical: 8),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Sign in to YouTube to play music',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            const Expanded(
+              child: Text(
+                'Sign in to YouTube to play music',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-            ElevatedButton(
+            const SizedBox(width: 12),
+            FilledButton(
               onPressed: () async {
                 final messenger = ScaffoldMessenger.of(context);
                 final ok = await Navigator.push<bool>(
@@ -160,9 +182,8 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   );
                 }
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
               child: const Text('Sign in'),
             ),
@@ -171,7 +192,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
       );
     }
 
-    // Signed in: show current track or "Nothing playing"
+    // Signed in: current track or "Nothing playing"
     return StreamBuilder<List<dynamic>>(
       stream: Rx.combineLatest2<PlaybackState, MediaItem?, List<dynamic>>(
         XtifyAudioHandler.instance.playbackState,
@@ -187,128 +208,120 @@ class _PlayerSheetState extends State<PlayerSheet> {
 
         if (mediaItem == null) {
           return const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: EdgeInsets.symmetric(horizontal: AppSpacing.screen, vertical: 14),
             child: Text(
               'Nothing playing',
               style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+                color: AppColors.textSecondary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
               ),
             ),
           );
         }
 
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              // Album art (grey music-note fallback)
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  borderRadius: asymRadius(10),
-                  image: mediaItem.artUri != null
-                      ? DecorationImage(
-                          image: artProviderFor(mediaItem.artUri.toString()),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                  color: AppColors.card,
-                ),
-                child: mediaItem.artUri == null
-                    ? const Icon(
-                        Icons.music_note,
-                        size: 24,
-                        color: Colors.white54,
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _expand,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.screen, 4, AppSpacing.screen, 6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
                   children: [
-                    Text(
-                      mediaItem.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    ArtImage(
+                      url: mediaItem.artUri?.toString() ?? '',
+                      size: 44,
+                      radius: 10,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      mediaItem.artist ?? 'Unknown Artist',
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 13,
+                    const SizedBox(width: AppSpacing.gap),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            mediaItem.title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            mediaItem.artist ?? 'Unknown Artist',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12.5,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
+                    const SizedBox(width: 8),
+                    _PlayPauseButton(playing: playbackState.playing, size: 40),
                   ],
                 ),
-              ),
-              _PlayButton(playing: playbackState.playing, size: 42),
-            ],
+                const SizedBox(height: 6),
+                _MiniProgress(duration: mediaItem.duration),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildExpandedContent(BuildContext context, ScrollController scrollController) {
+  Widget _buildExpandedContent(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+      padding: const EdgeInsets.fromLTRB(AppSpacing.screen, 12, AppSpacing.screen, 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Large art: full-width square, centred
+          // Large art, always square and centered
           StreamBuilder<MediaItem?>(
             stream: XtifyAudioHandler.instance.mediaItem,
             builder: (context, snapshot) {
               final mediaItem = snapshot.data;
-              return Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 24),
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 350),
-                    child: Container(
-                      key: ValueKey(mediaItem?.artUri),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.6),
-                            blurRadius: 32,
-                            offset: const Offset(0, 14),
-                          ),
-                        ],
-                        image: mediaItem?.artUri != null
-                            ? DecorationImage(
-                                image: artProviderFor(mediaItem!.artUri.toString()),
-                                fit: BoxFit.cover,
-                              )
-                            : null,
-                        color: AppColors.card,
-                      ),
-                      child: mediaItem?.artUri == null
-                          ? const Icon(Icons.music_note, size: 64, color: Colors.white38)
-                          : null,
+              final url = mediaItem?.artUri?.toString() ?? '';
+              return LayoutBuilder(builder: (context, box) {
+                final side = math.min(box.maxWidth, 300.0);
+                return AnimatedSwitcher(
+                  duration: AppMotion.medium,
+                  switchInCurve: AppMotion.curve,
+                  child: Container(
+                    key: ValueKey(url),
+                    width: side,
+                    height: side,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppRadius.card + 4),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          blurRadius: 30,
+                          offset: const Offset(0, 14),
+                        ),
+                      ],
+                    ),
+                    child: ArtImage(
+                      url: url,
+                      size: side,
+                      radius: AppRadius.card + 4,
                     ),
                   ),
-                ),
-              );
+                );
+              });
             },
           ),
+          const SizedBox(height: 24),
+          // Title and artist
           StreamBuilder<MediaItem?>(
             stream: XtifyAudioHandler.instance.mediaItem,
             builder: (context, snapshot) {
@@ -317,28 +330,29 @@ class _PlayerSheetState extends State<PlayerSheet> {
                 return const SizedBox.shrink();
               }
               return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     mediaItem.title,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 24,
+                      fontSize: 22,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: -0.6,
+                      letterSpacing: -0.5,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 4),
                   Text(
                     mediaItem.artist ?? 'Unknown Artist',
                     style: const TextStyle(
                       color: AppColors.textSecondary,
-                      fontSize: 16,
+                      fontSize: 15,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                   ),
                 ],
               );
@@ -364,67 +378,41 @@ class _PlayerSheetState extends State<PlayerSheet> {
                       await XtifyAudioHandler.instance.seek(position);
                     },
                     barHeight: 4.0,
-                    baseBarColor: Colors.white12,
-                    bufferedBarColor: Colors.white24,
-                    progressBarColor: AppColors.accent,
+                    baseBarColor: Colors.white.withValues(alpha: 0.16),
+                    bufferedBarColor: Colors.white.withValues(alpha: 0.12),
+                    progressBarColor: Colors.white,
                     thumbColor: Colors.white,
                     thumbGlowColor: Colors.transparent,
-                    thumbRadius: 7.0,
+                    thumbRadius: 6.0,
+                    barCapShape: BarCapShape.round,
+                    timeLabelLocation: TimeLabelLocation.below,
                     timeLabelTextStyle: const TextStyle(
-                      color: AppColors.textSecondary,
                       fontSize: 12,
+                      color: AppColors.textSecondary,
                     ),
                   );
                 },
               );
             },
           ),
+          const SizedBox(height: 8),
+          // Main controls: shuffle / previous / play / next / repeat
+          const _MainControls(),
           const SizedBox(height: 16),
-          // Controls, centred: shuffle, previous, play/pause, next, repeat
-          StreamBuilder<PlaybackState>(
-            stream: XtifyAudioHandler.instance.playbackState,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const SizedBox.shrink();
-              }
-              final PlaybackState playbackState = snapshot.data!;
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const _ShuffleButton(),
-                  IconButton(
-                    icon: const Icon(Icons.skip_previous_rounded, size: 42),
-                    onPressed: () {
-                      HapticFeedback.selectionClick();
-                      XtifyAudioHandler.instance.skipToPrevious();
-                    },
-                    color: Colors.white,
-                  ),
-                  _PlayButton(playing: playbackState.playing, size: 72),
-                  IconButton(
-                    icon: const Icon(Icons.skip_next_rounded, size: 42),
-                    onPressed: () {
-                      HapticFeedback.selectionClick();
-                      XtifyAudioHandler.instance.skipToNext();
-                    },
-                    color: Colors.white,
-                  ),
-                  const _RepeatButton(),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 12),
+          // Secondary actions: favourite / download / playlist / queue / YouTube
           const _ActionRow(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 28),
           // Up next
-          const Text(
-            'Up next',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Up next',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -457,7 +445,8 @@ class _PlayerSheetState extends State<PlayerSheet> {
                               finding
                                   ? 'Finding the next song…'
                                   : 'The next song is picked automatically',
-                              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                              style: const TextStyle(
+                                  color: AppColors.textSecondary, fontSize: 14),
                             ),
                           ),
                         ],
@@ -467,33 +456,49 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   return Column(
                     children: [
                       for (var i = 0; i < upcoming.length; i++)
-                        ListTile(
+                        InkWell(
                           onTap: () =>
                               XtifyAudioHandler.instance.skipToQueueItem(i + 1),
-                          leading: upcoming[i].artUri != null
-                              ? Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(4),
-                                    image: DecorationImage(
-                                      image: artProviderFor(
-                                          upcoming[i].artUri.toString()),
-                                      fit: BoxFit.cover,
-                                    ),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              children: [
+                                ArtImage(
+                                  url: upcoming[i].artUri?.toString() ?? '',
+                                  size: 48,
+                                  radius: 8,
+                                ),
+                                const SizedBox(width: AppSpacing.gap),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        upcoming[i].title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14.5,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        upcoming[i].artist ?? 'Unknown Artist',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: AppColors.textSecondary,
+                                          fontSize: 12.5,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                )
-                              : const Icon(Icons.music_note,
-                                  size: 28, color: Colors.white54),
-                          title: Text(
-                            upcoming[i].title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
-                          ),
-                          subtitle: Text(
-                            upcoming[i].artist ?? 'Unknown Artist',
-                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                     ],
@@ -508,18 +513,18 @@ class _PlayerSheetState extends State<PlayerSheet> {
   }
 }
 
-/// Round white play/pause button; the icon swaps with a little pop.
-class _PlayButton extends StatelessWidget {
+/// Round white play/pause button with an animated icon swap.
+class _PlayPauseButton extends StatelessWidget {
   final bool playing;
   final double size;
-  const _PlayButton({required this.playing, required this.size});
+  const _PlayPauseButton({required this.playing, required this.size});
 
   @override
   Widget build(BuildContext context) {
     return Pressable(
+      haptic: true,
       scale: 0.9,
       onTap: () {
-        HapticFeedback.lightImpact();
         if (playing) {
           XtifyAudioHandler.instance.pause();
         } else {
@@ -531,8 +536,11 @@ class _PlayButton extends StatelessWidget {
         height: size,
         decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
+          duration: AppMotion.fast,
+          transitionBuilder: (child, anim) => ScaleTransition(
+            scale: anim,
+            child: FadeTransition(opacity: anim, child: child),
+          ),
           child: Icon(
             playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
             key: ValueKey(playing),
@@ -545,102 +553,209 @@ class _PlayButton extends StatelessWidget {
   }
 }
 
-/// Shuffle, repeat, queue and the original YouTube link, under the main controls.
-class _ShuffleButton extends StatelessWidget {
-  const _ShuffleButton();
+/// Thin progress line under the mini player.
+class _MiniProgress extends StatelessWidget {
+  final Duration? duration;
+  const _MiniProgress({required this.duration});
 
   @override
   Widget build(BuildContext context) {
-    final h = XtifyAudioHandler.instance;
-    return ValueListenableBuilder<bool>(
-      valueListenable: h.shuffleOn,
-      builder: (_, shuffle, _) => IconButton(
-        tooltip: shuffle ? 'Shuffle on' : 'Shuffle off',
-        icon: Icon(Icons.shuffle_rounded, color: shuffle ? Colors.white : Colors.white38),
-        onPressed: () => h.setShuffle(!shuffle),
-      ),
+    final total = duration?.inMilliseconds ?? 0;
+    return StreamBuilder<Duration>(
+      stream: AudioService.position,
+      builder: (context, snap) {
+        final pos = snap.data?.inMilliseconds ?? 0;
+        final v = total <= 0 ? 0.0 : (pos / total).clamp(0.0, 1.0);
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(1.5),
+          child: LinearProgressIndicator(
+            value: v,
+            minHeight: 3,
+            backgroundColor: Colors.white.withValues(alpha: 0.12),
+            valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        );
+      },
     );
   }
 }
 
-class _RepeatButton extends StatelessWidget {
-  const _RepeatButton();
+/// Shuffle, previous, play/pause, next and repeat: five evenly spaced slots.
+class _MainControls extends StatelessWidget {
+  const _MainControls();
 
   @override
   Widget build(BuildContext context) {
     final h = XtifyAudioHandler.instance;
-    return ValueListenableBuilder<XtifyRepeat>(
-      valueListenable: h.repeat,
-      builder: (_, mode, _) => IconButton(
-        tooltip: switch (mode) {
-          XtifyRepeat.off => 'Repeat off',
-          XtifyRepeat.all => 'Repeat all',
-          XtifyRepeat.one => 'Repeat this song',
-        },
-        icon: Icon(
-          mode == XtifyRepeat.one ? Icons.repeat_one_rounded : Icons.repeat_rounded,
-          color: mode == XtifyRepeat.off ? Colors.white38 : Colors.white,
+    const off = AppColors.textTertiary;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        ValueListenableBuilder<bool>(
+          valueListenable: h.shuffleOn,
+          builder: (_, shuffle, _) => _ModeButton(
+            icon: Icons.shuffle_rounded,
+            active: shuffle,
+            tooltip: shuffle ? 'Shuffle on' : 'Shuffle off',
+            onTap: () => h.setShuffle(!shuffle),
+          ),
         ),
-        onPressed: h.cycleRepeat,
+        IconButton(
+          iconSize: 34,
+          icon: const Icon(Icons.skip_previous_rounded),
+          color: Colors.white,
+          onPressed: () {
+            HapticFeedback.selectionClick();
+            h.skipToPrevious();
+          },
+        ),
+        StreamBuilder<PlaybackState>(
+          stream: h.playbackState,
+          builder: (context, snapshot) =>
+              _PlayPauseButton(playing: snapshot.data?.playing ?? false, size: 68),
+        ),
+        IconButton(
+          iconSize: 34,
+          icon: const Icon(Icons.skip_next_rounded),
+          color: Colors.white,
+          onPressed: () {
+            HapticFeedback.selectionClick();
+            h.skipToNext();
+          },
+        ),
+        ValueListenableBuilder<XtifyRepeat>(
+          valueListenable: h.repeat,
+          builder: (_, mode, _) => _ModeButton(
+            icon: mode == XtifyRepeat.one
+                ? Icons.repeat_one_rounded
+                : Icons.repeat_rounded,
+            active: mode != XtifyRepeat.off,
+            tooltip: switch (mode) {
+              XtifyRepeat.off => 'Repeat off',
+              XtifyRepeat.all => 'Repeat all',
+              XtifyRepeat.one => 'Repeat this song',
+            },
+            onTap: h.cycleRepeat,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Toggle icon: bright with a dot underneath when on, dim when off.
+class _ModeButton extends StatelessWidget {
+  final IconData icon;
+  final bool active;
+  final String tooltip;
+  final VoidCallback onTap;
+  const _ModeButton({
+    required this.icon,
+    required this.active,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Pressable(
+        haptic: true,
+        onTap: onTap,
+        child: SizedBox(
+          width: 48,
+          height: 48,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedSwitcher(
+                duration: AppMotion.fast,
+                child: Icon(
+                  icon,
+                  key: ValueKey(icon),
+                  size: 24,
+                  color: active ? Colors.white : AppColors.textTertiary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              AnimatedContainer(
+                duration: AppMotion.fast,
+                width: 4,
+                height: 4,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: active ? Colors.white : Colors.transparent,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-/// Heart, playlist, download, queue and YouTube link in one centred row.
+/// Favourite, download, add to playlist, queue and the YouTube link.
 class _ActionRow extends StatelessWidget {
   const _ActionRow();
 
   @override
   Widget build(BuildContext context) {
     final h = XtifyAudioHandler.instance;
-    // rebuild whenever the song changes so the buttons point at the new track
     return StreamBuilder<MediaItem?>(
       stream: h.mediaItem,
-      builder: (context, _) => _buttons(context, h, h.currentTrack),
-    );
-  }
-
-  Widget _buttons(BuildContext context, XtifyAudioHandler h, Track? t) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        t == null
-            ? const SizedBox(width: 40)
-            : FavouriteButton(track: t, size: 24),
-        IconButton(
-          tooltip: 'Add to playlist',
-          icon: const Icon(Icons.playlist_add, size: 24),
-          color: Colors.white,
-          onPressed: () {
-            if (t != null) showAddToPlaylistSheet(context, t);
-          },
-        ),
-        t == null
-            ? const SizedBox(width: 40)
-            : DownloadButton(track: t, size: 24),
-        ValueListenableBuilder<List<Track>>(
-          valueListenable: h.upNextQueue,
-          builder: (_, queue, _) => IconButton(
-            tooltip: 'Queue',
-            icon: Badge(
-              isLabelVisible: queue.isNotEmpty,
-              label: Text('${queue.length}'),
-              child: const Icon(Icons.queue_music, color: Colors.white),
-            ),
-            onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const QueueScreen())),
+      builder: (context, _) {
+        final t = h.currentTrack;
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          decoration: BoxDecoration(
+            color: AppColors.card.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(AppRadius.card),
+            border: Border.all(color: AppColors.hairline),
           ),
-        ),
-        IconButton(
-          tooltip: 'Open original on YouTube',
-          icon: const Icon(Icons.open_in_new, size: 22),
-          color: Colors.white,
-          onPressed: () {
-            if (t != null && t.isPlayable) showYoutubeLink(context, t);
-          },
-        ),
-      ],
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              t == null
+                  ? const SizedBox(width: 48, height: 48)
+                  : FavouriteButton(track: t, size: 24),
+              t == null
+                  ? const SizedBox(width: 48, height: 48)
+                  : DownloadButton(track: t, size: 24),
+              IconButton(
+                icon: const Icon(Icons.playlist_add_rounded, size: 26),
+                tooltip: 'Add to playlist',
+                onPressed: () {
+                  if (t != null) showAddToPlaylistSheet(context, t);
+                },
+              ),
+              ValueListenableBuilder<List<Track>>(
+                valueListenable: h.upNextQueue,
+                builder: (_, queue, _) => IconButton(
+                  tooltip: 'Queue',
+                  icon: Badge(
+                    isLabelVisible: queue.isNotEmpty,
+                    backgroundColor: Colors.white,
+                    textColor: Colors.black,
+                    label: Text('${queue.length}'),
+                    child: const Icon(Icons.queue_music_rounded, size: 26),
+                  ),
+                  onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const QueueScreen())),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Open original on YouTube',
+                icon: const Icon(Icons.open_in_new_rounded, size: 24),
+                onPressed: () {
+                  if (t != null && t.isPlayable) showYoutubeLink(context, t);
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
