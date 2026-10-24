@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:xtify_app/screens/home_screen.dart';
 import 'package:xtify_app/screens/search_screen.dart';
@@ -107,29 +108,49 @@ class _XtifyHomeState extends State<XtifyHome> {
           // Main content
           SafeArea(
             bottom: false,
-            child: IndexedStack(
-              index: _selectedIndex,
-              children: _widgetOptions,
+            // all tabs stay alive (scroll position kept); the active one fades in
+            child: Stack(
+              children: [
+                for (var i = 0; i < _widgetOptions.length; i++)
+                  IgnorePointer(
+                    ignoring: i != _selectedIndex,
+                    child: TickerMode(
+                      enabled: i == _selectedIndex,
+                      child: AnimatedOpacity(
+                        opacity: i == _selectedIndex ? 1 : 0,
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOut,
+                        child: _widgetOptions[i],
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           // Player sheet at the bottom
           PlayerSheet(),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        items: const [
-          BottomNavigationBarItem(
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (i) {
+          HapticFeedback.selectionClick();
+          _onItemTapped(i);
+        },
+        destinations: const [
+          NavigationDestination(
             icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
             label: 'Home',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.search_outlined),
+            selectedIcon: Icon(Icons.search_rounded),
             label: 'Search',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.library_music_outlined),
+            selectedIcon: Icon(Icons.library_music_rounded),
             label: 'Library',
           ),
         ],

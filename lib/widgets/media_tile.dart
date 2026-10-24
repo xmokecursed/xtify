@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../services/download_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/image_cache.dart';
+import 'pressable.dart';
 
 /// Picture for a URL, or for a file:// URI (covers of downloaded songs work offline).
 ImageProvider artProviderFor(String url) {
@@ -40,7 +41,7 @@ class ArtImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(circular ? size / 2 : radius),
+      borderRadius: circular ? BorderRadius.circular(size / 2) : asymRadius(radius),
       child: Container(
         width: size,
         height: size,
@@ -58,6 +59,15 @@ class ArtImage extends StatelessWidget {
                 width: size,
                 height: size,
                 fit: BoxFit.cover,
+                // fade the cover in instead of popping
+                frameBuilder: (_, child, frame, sync) => sync
+                    ? child
+                    : AnimatedOpacity(
+                        opacity: frame == null ? 0 : 1,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOut,
+                        child: child,
+                      ),
                 errorBuilder: (_, _, _) => _fallback(),
               ),
       ),
@@ -97,8 +107,7 @@ class MediaTile extends StatelessWidget {
     final textAlign = circular ? TextAlign.center : TextAlign.start;
     return SizedBox(
       width: size,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      child: Pressable(
         onTap: onTap,
         onLongPress: onLongPress,
         child: Column(
