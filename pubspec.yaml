@@ -53,6 +53,7 @@ dependencies:
   cached_network_image: ^4.0.4
   flutter_cache_manager: ^3.3.1
   flutter_taglib: ^1.5.2
+  url_launcher: ^6.3.1
   file_picker: ^13.1.0
 
 dev_dependencies:

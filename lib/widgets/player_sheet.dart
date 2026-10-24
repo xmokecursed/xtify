@@ -1,5 +1,8 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'download_widgets.dart';
+import 'media_tile.dart';
+import 'youtube_link.dart';
+import '../screens/queue_screen.dart';
+import '../models/track_model.dart';
 import 'favourite_button.dart';
 import 'playlist_sheets.dart';
 import 'package:flutter/material.dart';
@@ -205,7 +208,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   borderRadius: BorderRadius.circular(8),
                   image: mediaItem.artUri != null
                       ? DecorationImage(
-                          image: CachedNetworkImageProvider(mediaItem.artUri.toString()),
+                          image: artProviderFor(mediaItem.artUri.toString()),
                           fit: BoxFit.cover,
                         )
                       : null,
@@ -288,7 +291,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   borderRadius: BorderRadius.circular(12),
                   image: mediaItem?.artUri != null
                       ? DecorationImage(
-                          image: CachedNetworkImageProvider(mediaItem!.artUri.toString()),
+                          image: artProviderFor(mediaItem!.artUri.toString()),
                           fit: BoxFit.cover,
                         )
                       : null,
@@ -441,7 +444,9 @@ class _PlayerSheetState extends State<PlayerSheet> {
               );
             },
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
+          const _UtilityRow(),
+          const SizedBox(height: 16),
           // Up next
           const Text(
             'Up next',
@@ -501,7 +506,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(4),
                                     image: DecorationImage(
-                                      image: CachedNetworkImageProvider(
+                                      image: artProviderFor(
                                           upcoming[i].artUri.toString()),
                                       fit: BoxFit.cover,
                                     ),
@@ -528,6 +533,67 @@ class _PlayerSheetState extends State<PlayerSheet> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Shuffle, repeat, queue and the original YouTube link, under the main controls.
+class _UtilityRow extends StatelessWidget {
+  const _UtilityRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final h = XtifyAudioHandler.instance;
+    const on = Colors.greenAccent;
+    const off = Colors.white54;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        ValueListenableBuilder<bool>(
+          valueListenable: h.shuffleOn,
+          builder: (_, shuffle, _) => IconButton(
+            tooltip: shuffle ? 'Shuffle on' : 'Shuffle off',
+            icon: Icon(Icons.shuffle, color: shuffle ? on : off),
+            onPressed: () => h.setShuffle(!shuffle),
+          ),
+        ),
+        ValueListenableBuilder<XtifyRepeat>(
+          valueListenable: h.repeat,
+          builder: (_, mode, _) => IconButton(
+            tooltip: switch (mode) {
+              XtifyRepeat.off => 'Repeat off',
+              XtifyRepeat.all => 'Repeat all',
+              XtifyRepeat.one => 'Repeat this song',
+            },
+            icon: Icon(
+              mode == XtifyRepeat.one ? Icons.repeat_one : Icons.repeat,
+              color: mode == XtifyRepeat.off ? off : on,
+            ),
+            onPressed: h.cycleRepeat,
+          ),
+        ),
+        ValueListenableBuilder<List<Track>>(
+          valueListenable: h.upNextQueue,
+          builder: (_, queue, _) => IconButton(
+            tooltip: 'Queue',
+            icon: Badge(
+              isLabelVisible: queue.isNotEmpty,
+              label: Text('${queue.length}'),
+              child: const Icon(Icons.queue_music, color: Colors.white),
+            ),
+            onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const QueueScreen())),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Open original on YouTube',
+          icon: const Icon(Icons.open_in_new, color: Colors.white),
+          onPressed: () {
+            final t = h.currentTrack;
+            if (t != null && t.isPlayable) showYoutubeLink(context, t);
+          },
+        ),
+      ],
     );
   }
 }

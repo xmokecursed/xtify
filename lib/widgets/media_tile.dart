@@ -1,7 +1,15 @@
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../services/download_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/image_cache.dart';
+
+/// Picture for a URL, or for a file:// URI (covers of downloaded songs work offline).
+ImageProvider artProviderFor(String url) {
+  if (url.startsWith('file://')) return FileImage(File.fromUri(Uri.parse(url)));
+  return CachedNetworkImageProvider(url);
+}
 
 /// Square (or round) artwork with a gray fallback icon.
 class ArtImage extends StatelessWidget {
@@ -23,6 +31,12 @@ class ArtImage extends StatelessWidget {
   Widget _fallback() =>
       Center(child: Icon(fallbackIcon, color: Colors.white38, size: size * 0.35));
 
+  ImageProvider? _localCover(String url) {
+    final path = DownloadService.instance.coverFor(url);
+    if (path == null) return null;
+    return ResizeImage(FileImage(File(path)), width: (size * 3).round());
+  }
+
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
@@ -34,11 +48,13 @@ class ArtImage extends StatelessWidget {
         child: url.isEmpty
             ? _fallback()
             : Image(
-                image: CachedNetworkImageProvider(
-                  url,
-                  maxWidth: (size * 3).round(),
-                  cacheManager: XtifyImageCache.instance,
-                ),
+                // a downloaded song's cover comes from the phone: instant and offline
+                image: _localCover(url) ??
+                    CachedNetworkImageProvider(
+                      url,
+                      maxWidth: (size * 3).round(),
+                      cacheManager: XtifyImageCache.instance,
+                    ),
                 width: size,
                 height: size,
                 fit: BoxFit.cover,

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/track_model.dart';
 import '../theme/app_theme.dart';
 import 'download_widgets.dart';
+import '../services/connectivity_service.dart';
+import '../services/download_service.dart';
 import 'favourite_button.dart';
 import 'media_tile.dart';
 import 'play_helper.dart';
@@ -26,8 +28,22 @@ class TrackRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // offline and not downloaded: shown dimmed, tapping explains why it cannot play
+    return ListenableBuilder(
+      listenable: Listenable.merge(
+          [ConnectivityService.instance.online, DownloadService.instance.items]),
+      builder: (context, _) => Opacity(
+        opacity: playableNow(track) ? 1 : 0.4,
+        child: _row(context),
+      ),
+    );
+  }
+
+  Widget _row(BuildContext context) {
     return InkWell(
-      onTap: onTap ?? () => playTrackWithFeedback(context, track),
+      onTap: playableNow(track)
+          ? (onTap ?? () => playTrackWithFeedback(context, track))
+          : () => playTrackWithFeedback(context, track),
       onLongPress: () => showTrackOptions(context, track),
       child: Padding(
         padding: const EdgeInsets.symmetric(
