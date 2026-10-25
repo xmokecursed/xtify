@@ -15,6 +15,7 @@ import 'package:xtify_app/services/cookie_refresh_service.dart';
 import 'package:xtify_app/services/history_service.dart';
 import 'package:xtify_app/services/artist_mix_service.dart';
 import 'package:xtify_app/services/playlist_service.dart';
+import 'package:xtify_app/services/debug_log.dart';
 import 'package:xtify_app/services/download_service.dart';
 import 'package:xtify_app/services/feed_service.dart';
 import 'package:xtify_app/services/search_history_service.dart';
@@ -23,6 +24,7 @@ import 'package:xtify_app/widgets/player_sheet.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  DebugLog.install(); // keeps recent logs and errors for "Copy debug info"
   // Keep decoded thumbnails in RAM small
   PaintingBinding.instance.imageCache.maximumSize = 120;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 60 << 20;

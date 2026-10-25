@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/playlist_model.dart';
 import '../services/history_service.dart';
 import '../services/playlist_service.dart';
+import '../widgets/debug_button.dart';
 import '../widgets/layout.dart';
 import '../widgets/media_tile.dart';
 import '../widgets/offline_banner.dart';
@@ -27,7 +28,9 @@ class LibraryScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return CustomScrollView(
       slivers: [
-        const SliverToBoxAdapter(child: ScreenHeader(title: 'Library')),
+        const SliverToBoxAdapter(
+          child: ScreenHeader(title: 'Library', trailing: DebugInfoButton()),
+        ),
         const SliverToBoxAdapter(child: OfflineBanner()),
         SectionSliver(
           title: 'Playlists',

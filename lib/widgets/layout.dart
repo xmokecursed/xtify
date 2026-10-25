@@ -9,11 +9,15 @@ class ScreenHeader extends StatelessWidget {
   /// Shows the Xtify logo before the title (used on Home).
   final bool showLogo;
 
+  /// Widget at the right end of the title row (for example an icon button).
+  final Widget? trailing;
+
   const ScreenHeader({
     super.key,
     required this.title,
     this.subtitle,
     this.showLogo = false,
+    this.trailing,
   });
 
   @override
@@ -39,6 +43,10 @@ class ScreenHeader extends StatelessWidget {
                   color: Colors.white,
                 ),
               ),
+              if (trailing != null) ...[
+                const Spacer(),
+                SizedBox(height: 36, child: FittedBox(child: trailing)),
+              ],
             ],
           ),
           if (subtitle != null)
