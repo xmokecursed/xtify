@@ -18,19 +18,19 @@
 
 | Home | Search | Player |
 | :---: | :---: | :---: |
-| ![Home](docs/screenshots/home.png) | ![Search](docs/screenshots/search.png) | ![Player](docs/screenshots/player.png) |
+| ![Home](docs/Xtify-home.jpg) | ![Search](docs/Xtify-search.jpg) | ![Player](docs/Xtify-player.jpg) |
 
-| Library | Downloads | Queue |
+| Library | Downloads | Playlist |
 | :---: | :---: | :---: |
-| ![Library](docs/screenshots/library.png) | ![Downloads](docs/screenshots/downloads.png) | ![Queue](docs/screenshots/queue.png) |
+| ![Library](docs/Xtify-library.jpg) | ![Downloads](docs/Xtify-download.jpg) | ![Queue](docs/Xtify-autoplaylists.jpg) |
 
 ---
 
 ## What it can do
 
 **Listen**
-- Search songs and artists and start playing in seconds.
-- **Auto-queue:** when your song ends, Xtify picks a similar one so the music never stops.
+- Search songs and artists and start playing **within 30-40s (only the first)**.
+- **Auto-queue:** when your song ends, Xtify picks a similar one so the music never stops. It doesn't take 30-40s to load.
 - **Made for you:** a mix for each artist you listen to.
 - Play next, add to queue, reorder the queue, shuffle and repeat (off / all / one).
 - Plays in the background, with controls on the lock screen and notification.
@@ -43,7 +43,7 @@
 - History, with a way to remove single songs. Undo is one tap away.
 
 **Everyday comfort**
-- Black and white design, smooth animations, no ads and no banners.
+- no ads and no banners.
 - Open the original YouTube video of any song.
 - A "Sign in again" notice when your login expires.
 - **Copy debug info** button in the Library tab, for easy bug reports.
@@ -62,7 +62,7 @@ Xtify gets its songs from YouTube. YouTube often refuses requests that do not lo
 
 ---
 
-## Xtify vs Spotify and YouTube Music
+## Xtify vs Spotify & YouTube Music
 
 **What you gain**
 - **Free and ad-free**, with no Premium subscription needed.
@@ -138,7 +138,8 @@ Phone (Xtify app) ──search / recommendations──▶ Xtify server ──▶
 | "Sign in to confirm you're not a bot" or songs not playing | Tap the *Sign in again* notice and log in again. |
 | First search is very slow | The server was asleep. Wait a minute and try again. |
 | Download fails | Check that you are online and that the download folder still exists (change it from Downloads → folder icon). |
-| Something is broken | Library tab → bug icon → *Copy debug info*, then send it with your report. |
+| Rapid downloading of many songs may cause temporary ip-flagging by youtube. |
+| Something is broken | Library tab → bug icon → *Copy debug info*, then send it with your report here. |
 
 ---
 
