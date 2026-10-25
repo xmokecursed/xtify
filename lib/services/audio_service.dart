@@ -8,6 +8,7 @@ import '../services/download_service.dart';
 import '../services/history_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auto_queue_service.dart';
+import 'cookie_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:rxdart/rxdart.dart';
 
@@ -500,7 +501,9 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     }
 
     if (token == _playToken) {
-      throw Exception('Could not play this track. ${errors.join(' | ')}');
+      final all = errors.join(' | ');
+      if (CookieService.looksLikeAuthError(all)) CookieService.instance.markExpired();
+      throw Exception('Could not play this track. $all');
     }
   }
 
