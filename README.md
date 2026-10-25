@@ -14,8 +14,6 @@
 
 ## Screenshots
 
-> Add your screenshots to `docs/screenshots/` and they will show up here.
-
 | Home | Search | Player |
 | :---: | :---: | :---: |
 | ![Home](docs/Xtify-home.jpg) | ![Search](docs/Xtify-search.jpg) | ![Player](docs/Xtify-player.jpg) |
