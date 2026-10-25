@@ -135,8 +135,7 @@ Phone (Xtify app) ──search / recommendations──▶ Xtify server ──▶
 | --- | --- |
 | "Sign in to confirm you're not a bot" or songs not playing | Tap the *Sign in again* notice and log in again. |
 | First search is very slow | The server was asleep. Wait a minute and try again. |
-| Download fails | Check that you are online and that the download folder still exists (change it from Downloads → folder icon). |
-| Rapid downloading of many songs may cause temporary ip-flagging by youtube. |
+| Download fails | Check that you are online and that the download folder still exists (change it from Downloads → folder icon). **Rapid downloading of many songs may cause temporary ip-flagging by youtube.** |
 | Something is broken | Library tab → bug icon → *Copy debug info*, then send it with your report here. |
 
 ---
