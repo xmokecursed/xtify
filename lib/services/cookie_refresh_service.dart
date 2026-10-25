@@ -57,6 +57,7 @@ class CookieRefreshService {
       // Never overwrite a good file with logged-out cookies.
       if (!await CookieService.instance.hasAuthCookieInWebView()) {
         debugPrint('Cookie refresh: WebView has no auth cookie; keeping old file');
+        CookieService.instance.markExpired(); // the session ended: ask the user to sign in again
         return;
       }
       await CookieService.instance.saveFromWebView();

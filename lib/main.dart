@@ -21,6 +21,7 @@ import 'package:xtify_app/services/feed_service.dart';
 import 'package:xtify_app/services/search_history_service.dart';
 import 'package:xtify_app/theme/app_theme.dart';
 import 'package:xtify_app/widgets/player_sheet.dart';
+import 'package:xtify_app/widgets/signin_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -134,12 +135,19 @@ class _XtifyHomeState extends State<XtifyHome>
           SafeArea(
             bottom: false,
             // IndexedStack keeps every tab's scroll position and search results
-            child: FadeTransition(
-              opacity: _fade,
-              child: IndexedStack(
-                index: _selectedIndex,
-                children: _widgetOptions,
-              ),
+            child: Column(
+              children: [
+                const SignInAgainBanner(),
+                Expanded(
+                  child: FadeTransition(
+                    opacity: _fade,
+                    child: IndexedStack(
+                      index: _selectedIndex,
+                      children: _widgetOptions,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           // Player sheet at the bottom

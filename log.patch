@@ -1,0 +1,235 @@
+diff --git a/lib/main.dart b/lib/main.dart
+index 51c34fe..7a3f252 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -19,6 +19,7 @@ import 'package:xtify_app/services/feed_service.dart';
+ import 'package:xtify_app/services/search_history_service.dart';
+ import 'package:xtify_app/theme/app_theme.dart';
+ import 'package:xtify_app/widgets/player_sheet.dart';
++import 'package:xtify_app/widgets/signin_banner.dart';
+ 
+ void main() async {
+   WidgetsFlutterBinding.ensureInitialized();
+@@ -124,12 +125,19 @@ class _XtifyHomeState extends State<XtifyHome>
+           SafeArea(
+             bottom: false,
+             // IndexedStack keeps every tab's scroll position and search results
+-            child: FadeTransition(
+-              opacity: _fade,
+-              child: IndexedStack(
+-                index: _selectedIndex,
+-                children: _widgetOptions,
+-              ),
++            child: Column(
++              children: [
++                const SignInAgainBanner(),
++                Expanded(
++                  child: FadeTransition(
++                    opacity: _fade,
++                    child: IndexedStack(
++                      index: _selectedIndex,
++                      children: _widgetOptions,
++                    ),
++                  ),
++                ),
++              ],
+             ),
+           ),
+           // Player sheet at the bottom
+diff --git a/lib/services/audio_service.dart b/lib/services/audio_service.dart
+index e837872..dca3cce 100644
+--- a/lib/services/audio_service.dart
++++ b/lib/services/audio_service.dart
+@@ -8,6 +8,7 @@ import '../services/download_service.dart';
+ import '../services/history_service.dart';
+ import 'package:shared_preferences/shared_preferences.dart';
+ import 'auto_queue_service.dart';
++import 'cookie_service.dart';
+ import 'package:flutter/foundation.dart';
+ import 'package:rxdart/rxdart.dart';
+ 
+@@ -500,7 +501,9 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
+     }
+ 
+     if (token == _playToken) {
+-      throw Exception('Could not play this track. ${errors.join(' | ')}');
++      final all = errors.join(' | ');
++      if (CookieService.looksLikeAuthError(all)) CookieService.instance.markExpired();
++      throw Exception('Could not play this track. $all');
+     }
+   }
+ 
+diff --git a/lib/services/cookie_refresh_service.dart b/lib/services/cookie_refresh_service.dart
+index b3aa170..25f2144 100644
+--- a/lib/services/cookie_refresh_service.dart
++++ b/lib/services/cookie_refresh_service.dart
+@@ -57,6 +57,7 @@ class CookieRefreshService {
+       // Never overwrite a good file with logged-out cookies.
+       if (!await CookieService.instance.hasAuthCookieInWebView()) {
+         debugPrint('Cookie refresh: WebView has no auth cookie; keeping old file');
++        CookieService.instance.markExpired(); // the session ended: ask the user to sign in again
+         return;
+       }
+       await CookieService.instance.saveFromWebView();
+diff --git a/lib/services/cookie_service.dart b/lib/services/cookie_service.dart
+index 669cd31..b3e0659 100644
+--- a/lib/services/cookie_service.dart
++++ b/lib/services/cookie_service.dart
+@@ -19,6 +19,26 @@ class CookieService {
+   final ValueNotifier<bool> _signedInNotifier = ValueNotifier<bool>(false);
+   ValueListenable<bool> get signedInListener => _signedInNotifier;
+ 
++  /// True when YouTube stopped accepting the saved sign-in (shows the "Sign in again" banner).
++  final ValueNotifier<bool> _needsSignInNotifier = ValueNotifier<bool>(false);
++  ValueListenable<bool> get needsSignInListener => _needsSignInNotifier;
++
++  void markExpired() {
++    if (_signedInNotifier.value && !_needsSignInNotifier.value) {
++      _needsSignInNotifier.value = true;
++    }
++  }
++
++  /// True when a yt-dlp / player error looks like "YouTube wants you signed in".
++  static bool looksLikeAuthError(String message) {
++    final m = message.toLowerCase();
++    return m.contains('sign in to confirm') ||
++        m.contains('not a bot') ||
++        m.contains('login required') ||
++        m.contains('cookies are no longer valid') ||
++        m.contains('not signed in');
++  }
++
+   Future<void> init() async {
+     await _loadSignedInStatus();
+   }
+@@ -119,6 +139,7 @@ class CookieService {
+ 
+       final signedIn = _hasAuth(allCookies); // from memory, not by re-reading the file
+       _signedInNotifier.value = signedIn;
++      if (signedIn) _needsSignInNotifier.value = false; // fresh sign-in: notice goes away
+ 
+       final prefs = await SharedPreferences.getInstance();
+       await prefs.setBool(_signedInKey, signedIn);
+@@ -225,6 +246,7 @@ class CookieService {
+ 
+       // Update sign-in status
+       _signedInNotifier.value = false;
++      _needsSignInNotifier.value = false;
+       final prefs = await SharedPreferences.getInstance();
+       await prefs.setBool(_signedInKey, false);
+ 
+diff --git a/lib/widgets/play_helper.dart b/lib/widgets/play_helper.dart
+index d46c570..165f437 100644
+--- a/lib/widgets/play_helper.dart
++++ b/lib/widgets/play_helper.dart
+@@ -1,7 +1,9 @@
+ import 'package:flutter/material.dart';
+ import '../models/track_model.dart';
+ import '../services/audio_service.dart';
++import '../screens/youtube_login_screen.dart';
+ import '../services/connectivity_service.dart';
++import '../services/cookie_service.dart';
+ import '../services/download_service.dart';
+ import 'loading_track_card.dart';
+ 
+@@ -47,12 +49,22 @@ Future<void> _playWithFeedback(BuildContext context, Track track) async {
+     messenger.showSnackBar(
+       SnackBar(
+         content: Text('Could not play "${track.title}"'),
+-        action: SnackBarAction(
+-          label: 'Retry',
+-          onPressed: () {
+-            if (context.mounted) playTrackWithFeedback(context, track);
+-          },
+-        ),
++        action: CookieService.instance.needsSignInListener.value
++            ? SnackBarAction(
++                label: 'Sign in again',
++                onPressed: () {
++                  if (context.mounted) {
++                    Navigator.of(context).push(MaterialPageRoute<bool>(
++                        builder: (_) => const YoutubeLoginScreen()));
++                  }
++                },
++              )
++            : SnackBarAction(
++                label: 'Retry',
++                onPressed: () {
++                  if (context.mounted) playTrackWithFeedback(context, track);
++                },
++              ),
+         duration: const Duration(seconds: 8),
+       ),
+     );
+diff --git a/lib/widgets/signin_banner.dart b/lib/widgets/signin_banner.dart
+new file mode 100644
+index 0000000..8de7247
+--- /dev/null
++++ b/lib/widgets/signin_banner.dart
+@@ -0,0 +1,66 @@
++import 'package:flutter/material.dart';
++import '../screens/youtube_login_screen.dart';
++import '../services/cookie_service.dart';
++import '../theme/app_theme.dart';
++
++/// Slim strip at the top of the app: "Your YouTube sign-in expired. Sign in again".
++class SignInAgainBanner extends StatelessWidget {
++  const SignInAgainBanner({super.key});
++
++  @override
++  Widget build(BuildContext context) {
++    return ValueListenableBuilder<bool>(
++      valueListenable: CookieService.instance.needsSignInListener,
++      builder: (context, needs, _) => AnimatedSize(
++        duration: AppMotion.fast,
++        curve: AppMotion.curve,
++        alignment: Alignment.topCenter,
++        child: !needs
++            ? const SizedBox(width: double.infinity)
++            : Padding(
++                padding: const EdgeInsets.fromLTRB(
++                    AppSpacing.screen, 8, AppSpacing.screen, 8),
++                child: Material(
++                  color: AppColors.card,
++                  borderRadius: BorderRadius.circular(14),
++                  child: InkWell(
++                    borderRadius: BorderRadius.circular(14),
++                    onTap: () => Navigator.of(context).push(
++                      MaterialPageRoute<bool>(
++                        builder: (_) => const YoutubeLoginScreen(),
++                      ),
++                    ),
++                    child: Container(
++                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
++                      decoration: BoxDecoration(
++                        borderRadius: BorderRadius.circular(14),
++                        border: Border.all(color: AppColors.hairline),
++                      ),
++                      child: const Row(
++                        children: [
++                          Icon(Icons.lock_outline_rounded, size: 20, color: Colors.white70),
++                          SizedBox(width: 12),
++                          Expanded(
++                            child: Text(
++                              'Your YouTube sign-in expired. Some songs may not play.',
++                              style: TextStyle(fontSize: 13, color: Colors.white70),
++                            ),
++                          ),
++                          SizedBox(width: 8),
++                          Text(
++                            'Sign in again',
++                            style: TextStyle(
++                                fontSize: 13,
++                                fontWeight: FontWeight.w700,
++                                color: Colors.white),
++                          ),
++                        ],
++                      ),
++                    ),
++                  ),
++                ),
++              ),
++      ),
++    );
++  }
++}

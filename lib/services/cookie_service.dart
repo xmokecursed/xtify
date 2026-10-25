@@ -19,6 +19,26 @@ class CookieService {
   final ValueNotifier<bool> _signedInNotifier = ValueNotifier<bool>(false);
   ValueListenable<bool> get signedInListener => _signedInNotifier;
 
+  /// True when YouTube stopped accepting the saved sign-in (shows the "Sign in again" banner).
+  final ValueNotifier<bool> _needsSignInNotifier = ValueNotifier<bool>(false);
+  ValueListenable<bool> get needsSignInListener => _needsSignInNotifier;
+
+  void markExpired() {
+    if (_signedInNotifier.value && !_needsSignInNotifier.value) {
+      _needsSignInNotifier.value = true;
+    }
+  }
+
+  /// True when a yt-dlp / player error looks like "YouTube wants you signed in".
+  static bool looksLikeAuthError(String message) {
+    final m = message.toLowerCase();
+    return m.contains('sign in to confirm') ||
+        m.contains('not a bot') ||
+        m.contains('login required') ||
+        m.contains('cookies are no longer valid') ||
+        m.contains('not signed in');
+  }
+
   Future<void> init() async {
     await _loadSignedInStatus();
   }
@@ -119,6 +139,7 @@ class CookieService {
 
       final signedIn = _hasAuth(allCookies); // from memory, not by re-reading the file
       _signedInNotifier.value = signedIn;
+      if (signedIn) _needsSignInNotifier.value = false; // fresh sign-in: notice goes away
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_signedInKey, signedIn);
@@ -225,6 +246,7 @@ class CookieService {
 
       // Update sign-in status
       _signedInNotifier.value = false;
+      _needsSignInNotifier.value = false;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_signedInKey, false);
 
