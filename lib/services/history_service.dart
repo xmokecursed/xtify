@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track_model.dart';
 
-/// An artist the user has played, with how often and when.
 class ArtistEntry {
   final String name;
   final int plays;
@@ -43,7 +42,6 @@ class HistoryService {
 
   final ValueNotifier<List<Track>> tracks = ValueNotifier<List<Track>>(const []);
 
-  /// Played artists, most played first.
   final ValueNotifier<List<ArtistEntry>> artists =
       ValueNotifier<List<ArtistEntry>>(const []);
 
@@ -100,8 +98,16 @@ class HistoryService {
 
   bool contains(String trackId) => tracks.value.any((t) => t.id == trackId);
 
-  /// Takes one song out of the history. The history only keeps one entry per song,
-  /// so the artist loses one play (and disappears when that was their last).
+  Future<void> restore(Track t, int index) async {
+    if (contains(t.id)) return;
+    final list = [...tracks.value];
+    list.insert(index.clamp(0, list.length), t);
+    tracks.value = list;
+    final name = t.artist.trim();
+    if (name.isNotEmpty) _countArtist(name, t.imageUrl);
+    await _persist();
+  }
+
   Future<void> remove(String trackId) async {
     final i = tracks.value.indexWhere((t) => t.id == trackId);
     if (i < 0) return;
@@ -121,7 +127,7 @@ class HistoryService {
             lastPlayedMs: a.lastPlayedMs,
             imageUrl: a.imageUrl,
           ));
-        } // plays <= 1: the artist is dropped
+        }
       }
       artists.value = _sorted(list);
     }
