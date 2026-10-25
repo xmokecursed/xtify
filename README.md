@@ -4,7 +4,7 @@
 
 # Xtify
 
-**A clean, ad-free music player for Android. Search any song, play it instantly, and keep your favourites offline.**
+**A clean, ad-free music player for Android. Search any song, play it, and keep your favourites offline.**
 
 [Download the APK](../../releases/latest) · [How it works](#how-it-works) · [Build it yourself](#build-it-yourself)
 
