@@ -1,0 +1,104 @@
+diff --git a/lib/screens/playlist_screen.dart b/lib/screens/playlist_screen.dart
+index 8dc9123..3cc6836 100644
+--- a/lib/screens/playlist_screen.dart
++++ b/lib/screens/playlist_screen.dart
+@@ -162,9 +162,25 @@ class PlaylistScreen extends StatelessWidget {
+                                 key: ValueKey('${p.id}-${t.id}'),
+                                 direction: DismissDirection.endToStart,
+                                 // in Downloads, swiping also deletes the saved file
+-                                onDismissed: (_) => isDownloads
+-                                    ? DownloadService.instance.remove(t.id)
+-                                    : PlaylistService.instance.removeTrack(p.id, t.id),
++                                onDismissed: (_) {
++                                  if (isDownloads) {
++                                    DownloadService.instance.remove(t.id);
++                                    return;
++                                  }
++                                  PlaylistService.instance.removeTrack(p.id, t.id);
++                                  // the saved file of a download cannot come back, so no Undo there
++                                  final m = ScaffoldMessenger.of(context);
++                                  m.hideCurrentSnackBar();
++                                  m.showSnackBar(SnackBar(
++                                    content: Text('Removed "${t.title}"'),
++                                    duration: const Duration(seconds: 5),
++                                    action: SnackBarAction(
++                                      label: 'Undo',
++                                      onPressed: () => PlaylistService.instance
++                                          .insertTrack(p.id, t, i),
++                                    ),
++                                  ));
++                                },
+                                 background: Container(
+                                   color: AppColors.card,
+                                   alignment: Alignment.centerRight,
+diff --git a/lib/services/history_service.dart b/lib/services/history_service.dart
+index b3f4a1e..4b3840f 100644
+--- a/lib/services/history_service.dart
++++ b/lib/services/history_service.dart
+@@ -98,6 +98,17 @@ class HistoryService {
+     );
+   }
+ 
++  /// Puts a removed song back (Undo) at its old place and gives its artist the play back.
++  Future<void> restore(Track t, int index) async {
++    if (contains(t.id)) return;
++    final list = [...tracks.value];
++    list.insert(index.clamp(0, list.length), t);
++    tracks.value = list;
++    final name = t.artist.trim();
++    if (name.isNotEmpty) _countArtist(name, t.imageUrl);
++    await _persist();
++  }
++
+   bool contains(String trackId) => tracks.value.any((t) => t.id == trackId);
+ 
+   /// Takes one song out of the history. The history only keeps one entry per song,
+diff --git a/lib/services/playlist_service.dart b/lib/services/playlist_service.dart
+index b16e534..6af7277 100644
+--- a/lib/services/playlist_service.dart
++++ b/lib/services/playlist_service.dart
+@@ -135,6 +135,17 @@ class PlaylistService {
+     );
+   }
+ 
++  /// Puts a removed song back at [index] (Undo).
++  Future<void> insertTrack(String id, Track t, int index) async {
++    final p = byId(id);
++    if (p == null || p.tracks.any((x) => x.id == t.id)) return;
++    await _update(id, (p) {
++      final list = [...p.tracks];
++      list.insert(index.clamp(0, list.length), t);
++      return _copy(p, tracks: list);
++    });
++  }
++
+   /// [newIndex] follows ReorderableListView's convention.
+   Future<void> reorder(String id, int oldIndex, int newIndex) async {
+     await _update(id, (p) {
+diff --git a/lib/widgets/playlist_sheets.dart b/lib/widgets/playlist_sheets.dart
+index 2f48b40..2fed4c6 100644
+--- a/lib/widgets/playlist_sheets.dart
++++ b/lib/widgets/playlist_sheets.dart
+@@ -280,10 +280,20 @@ Future<void> showTrackOptions(BuildContext context, Track track) {
+                       title: const Text('Remove from history'),
+                       onTap: () async {
+                         Navigator.pop(sheetContext);
++                        final at = HistoryService.instance.tracks.value
++                            .indexWhere((t) => t.id == track.id);
+                         await HistoryService.instance.remove(track.id);
+                         await ArtistMixService.instance.forget(track.id);
+-                        messenger.showSnackBar(
+-                            const SnackBar(content: Text('Removed from history')));
++                        messenger.hideCurrentSnackBar();
++                        messenger.showSnackBar(SnackBar(
++                          content: const Text('Removed from history'),
++                          duration: const Duration(seconds: 5),
++                          action: SnackBarAction(
++                            label: 'Undo',
++                            onPressed: () => HistoryService.instance
++                                .restore(track, at < 0 ? 0 : at),
++                          ),
++                        ));
+                       },
+                     )
+                   : const SizedBox.shrink(),
