@@ -14,6 +14,8 @@ android {
     }
 
     defaultConfig {
+        applicationId = "com.example.xtify_app"
+        minSdk = 24
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
