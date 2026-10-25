@@ -5,15 +5,10 @@ import 'package:path_provider/path_provider.dart';
 import '../models/playlist_model.dart';
 import '../models/track_model.dart';
 
-/// Local playlists, stored in one small JSON file.
 class PlaylistService {
   PlaylistService._();
   static final PlaylistService instance = PlaylistService._();
-
-  /// Id of the built-in "Favourites" playlist (the hearted songs).
   static const String favouritesId = 'favourites';
-
-  /// Id of the built-in "Downloads" playlist (songs saved on the phone).
   static const String downloadsId = 'downloads';
 
   final ValueNotifier<List<Playlist>> playlists =
@@ -61,7 +56,6 @@ class PlaylistService {
     await _save();
   }
 
-  /// The user's own playlists (everything except Favourites and Downloads).
   List<Playlist> get userPlaylists => playlists.value
       .where((p) => p.id != favouritesId && p.id != downloadsId)
       .toList();
@@ -69,11 +63,9 @@ class PlaylistService {
   bool isFavourite(String trackId) =>
       byId(favouritesId)?.tracks.any((t) => t.id == trackId) ?? false;
 
-  /// Returns true when the song is now a favourite.
   final Set<String> _favBusy = {};
 
   Future<bool> toggleFavourite(Track t) async {
-    // spamming the heart: one change at a time per song
     if (!_favBusy.add(t.id)) return isFavourite(t.id);
     try {
       if (isFavourite(t.id)) {
@@ -119,8 +111,6 @@ class PlaylistService {
     playlists.value = playlists.value.where((p) => p.id != id).toList();
     await _save();
   }
-
-  /// Returns false when the song is already in the playlist.
   Future<bool> addTrack(String id, Track t) async {
     final p = byId(id);
     if (p == null || p.tracks.any((x) => x.id == t.id)) return false;
@@ -135,7 +125,15 @@ class PlaylistService {
     );
   }
 
-  /// [newIndex] follows ReorderableListView's convention.
+  Future<void> insertTrack(String id, Track t, int index) async {
+    final p = byId(id);
+    if (p == null || p.tracks.any((x) => x.id == t.id)) return;
+    await _update(id, (p) {
+      final list = [...p.tracks];
+      list.insert(index.clamp(0, list.length), t);
+      return _copy(p, tracks: list);
+    });
+  }
   Future<void> reorder(String id, int oldIndex, int newIndex) async {
     await _update(id, (p) {
       final list = [...p.tracks];
@@ -145,7 +143,6 @@ class PlaylistService {
     });
   }
 
-  /// Playlists whose name, or one of whose songs, matches [query].
   List<Playlist> search(String query) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return const [];
