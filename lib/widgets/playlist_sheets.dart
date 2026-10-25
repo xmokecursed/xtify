@@ -11,7 +11,6 @@ import '../theme/app_theme.dart';
 import 'media_tile.dart';
 import 'youtube_link.dart';
 
-/// Asks for a playlist name. Returns null when cancelled.
 Future<String?> promptPlaylistName(BuildContext context, {String initial = ''}) {
   return showDialog<String>(
     context: context,
@@ -69,10 +68,7 @@ class _NameDialogState extends State<_NameDialog> {
   }
 }
 
-/// Adds [track] to a playlist.
-/// - no playlists yet: asks for a name and creates one
-/// - exactly one playlist (Favourites doesn't count): adds straight to it
-/// - several playlists: lets the user pick
+
 Future<void> showAddToPlaylistSheet(BuildContext context, Track track) async {
   final messenger = ScaffoldMessenger.of(context);
   final lists = PlaylistService.instance.userPlaylists;
@@ -163,12 +159,11 @@ Future<void> showAddToPlaylistSheet(BuildContext context, Track track) async {
   );
 }
 
-/// The "more" menu for a song: favourite and add to playlist.
 Future<void> showTrackOptions(BuildContext context, Track track) {
   final messenger = ScaffoldMessenger.of(context);
   return showModalBottomSheet<void>(
     context: context,
-    isScrollControlled: true, // the menu has many rows: let it scroll on small phones
+    isScrollControlled: true, 
     builder: (sheetContext) {
       return SafeArea(
         child: SingleChildScrollView(
@@ -280,10 +275,20 @@ Future<void> showTrackOptions(BuildContext context, Track track) {
                       title: const Text('Remove from history'),
                       onTap: () async {
                         Navigator.pop(sheetContext);
+                        final at = HistoryService.instance.tracks.value
+                            .indexWhere((t) => t.id == track.id);
                         await HistoryService.instance.remove(track.id);
                         await ArtistMixService.instance.forget(track.id);
-                        messenger.showSnackBar(
-                            const SnackBar(content: Text('Removed from history')));
+                        messenger.hideCurrentSnackBar();
+                        messenger.showSnackBar(SnackBar(
+                          content: const Text('Removed from history'),
+                          duration: const Duration(seconds: 5),
+                          action: SnackBarAction(
+                            label: 'Undo',
+                            onPressed: () => HistoryService.instance
+                                .restore(track, at < 0 ? 0 : at),
+                          ),
+                        ));
                       },
                     )
                   : const SizedBox.shrink(),
@@ -332,8 +337,6 @@ Future<void> showTrackOptions(BuildContext context, Track track) {
     },
   );
 }
-
-/// "Play next" / "Add to queue" with a message and a way to open the queue.
 Future<void> _queueAction(BuildContext context, ScaffoldMessengerState messenger, Track track,
     {required bool next}) async {
   bool done;
