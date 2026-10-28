@@ -527,6 +527,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     } catch (e) {
       errors.add('$label: ${_short(e)}');
       debugPrint('play attempt failed ($label): ${_short(e)}');
+      if (r.url.contains('googlevideo.com')) unawaited(AudioUrlResolver.probe(r.url));
       return false;
     } finally {
       _settingSource = false;
