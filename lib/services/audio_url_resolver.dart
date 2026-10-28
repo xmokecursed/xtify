@@ -74,7 +74,8 @@ class AudioUrlResolver {
   static ResolvedAudioUrl? cached(String videoId) {
     final item = _cacheUtil.get(videoId);
     if (item == null) return null;
-    return ResolvedAudioUrl(url: item['url'] as String, headers: const {});
+    final url = item['url'] as String;
+    return ResolvedAudioUrl(url: url, headers: _withRange(url, const {}));
   }
 
   /// Call only after the URL actually played.
@@ -189,7 +190,17 @@ class AudioUrlResolver {
     final audioUrl = format?.url;
     if (format == null || audioUrl == null) throw Exception('no audio format returned');
     debugPrint('[$videoId] ${s.label}: audio url from ${Uri.parse(audioUrl).host}');
-    return ResolvedAudioUrl(url: audioUrl, headers: _headersOf(format));
+    return ResolvedAudioUrl(url: audioUrl, headers: _withRange(audioUrl, _headersOf(format)));
+  }
+
+  /// googlevideo answers 403 to a request with no Range header (your probe: 206 with
+  /// `bytes=0-1`, 403 without), and the player sends none for a song from its start. A
+  /// `Range: bytes=0-` makes it look like a browser's media request; when the player seeks it
+  /// writes its own Range over this one.
+  static Map<String, String> _withRange(String url, Map<String, String> h) {
+    if (!url.contains('googlevideo.com')) return h;
+    if (h.keys.any((k) => k.toLowerCase() == 'range')) return h;
+    return {...h, 'Range': 'bytes=0-'};
   }
 
   /// The headers yt-dlp says this link needs (YouTube ties a link to the client that asked
