@@ -1,0 +1,29 @@
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 7544312..b408335 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -15,6 +15,7 @@
+     <application
+         android:label="Xtify"
+         android:icon="@mipmap/ic_launcher"
++        android:networkSecurityConfig="@xml/network_security_config"
+         android:extractNativeLibs="true">
+         <activity
+             android:name=".MainActivity"
+diff --git a/android/app/src/main/res/xml/network_security_config.xml b/android/app/src/main/res/xml/network_security_config.xml
+new file mode 100644
+index 0000000..a71eab9
+--- /dev/null
++++ b/android/app/src/main/res/xml/network_security_config.xml
+@@ -0,0 +1,11 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- just_audio proxies requests that carry custom headers through a local
++     HTTP server on this device. Allow plain HTTP to loopback only; all other
++     traffic stays HTTPS-only. -->
++<network-security-config>
++    <base-config cleartextTrafficPermitted="false" />
++    <domain-config cleartextTrafficPermitted="true">
++        <domain includeSubdomains="false">127.0.0.1</domain>
++        <domain includeSubdomains="false">localhost</domain>
++    </domain-config>
++</network-security-config>
