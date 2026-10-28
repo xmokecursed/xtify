@@ -1,0 +1,54 @@
+diff --git a/lib/services/debug_log.dart b/lib/services/debug_log.dart
+index f0d4fb3..562380e 100644
+--- a/lib/services/debug_log.dart
++++ b/lib/services/debug_log.dart
+@@ -20,7 +20,7 @@ class DebugLog {
+     final original = debugPrint;
+     debugPrint = (String? message, {int? wrapWidth}) {
+       if (message != null) add(message);
+-      original(message, wrapWidth: wrapWidth);
++      original(message == null ? null : _color(message), wrapWidth: wrapWidth);
+     };
+     final previousOnError = FlutterError.onError;
+     FlutterError.onError = (details) {
+@@ -33,6 +33,40 @@ class DebugLog {
+     };
+   }
+ 
++  // Colours for the terminal only (the copied debug info stays plain text):
++  // red = failures, yellow = retries and waiting, green = things that worked.
++  static final RegExp _bad = RegExp(
++      r'fail|error|exception|uncaught|could not|crash|403', caseSensitive: false);
++  static final RegExp _warn = RegExp(
++      r'blocked|retry|timeout|timed out|dropped|skipped|stuck|recover|expired|busy|offline',
++      caseSensitive: false);
++  static final RegExp _good = RegExp(
++      r'took \d+ms|initiali[sz]ed|picked|matched|found a client id|audio url from|playing',
++      caseSensitive: false);
++  static final RegExp _videoId = RegExp(r'^\[[A-Za-z0-9_-]{11}\]');
++
++  static String _color(String m) {
++    const reset = '\x1B[0m';
++    final code = _bad.hasMatch(m)
++        ? '\x1B[1;31m'
++        : _warn.hasMatch(m)
++            ? '\x1B[33m'
++            : _good.hasMatch(m)
++                ? '\x1B[32m'
++                : null;
++    final id = _videoId.firstMatch(m);
++    var body = m;
++    if (id != null) {
++      // the video id in cyan, so one song's lines are easy to follow
++      body = '\x1B[36m${id[0]}$reset${code ?? ''}${m.substring(id.end)}';
++    } else if (code != null) {
++      body = '$code$m';
++    } else {
++      return m;
++    }
++    return '$body$reset';
++  }
++
+   static String _trim(StackTrace? s) =>
+       (s?.toString() ?? '').split('\n').take(8).join('\n');
+ 
