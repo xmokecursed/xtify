@@ -19,6 +19,11 @@ class YtDlpUpdateService {
         throw TimeoutException('Extractor init timeout');
       });
 
+      // updating uses the CPU for a while: never while a song is being looked up
+      for (var i = 0; i < 20 && AudioUrlResolver.isBusy; i++) {
+        await Future.delayed(const Duration(seconds: 15));
+      }
+
       final prefs = await SharedPreferences.getInstance();
       final lastUpdate = prefs.getInt(_lastUpdateKey);
       final now = DateTime.now().millisecondsSinceEpoch;

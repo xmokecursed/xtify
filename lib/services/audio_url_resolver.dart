@@ -25,15 +25,21 @@ class AudioUrlResolver {
 
   // Tried in order, starting with the one that last worked.
   static const List<_Strategy> _strategies = [
+    // Clients that hand out direct audio links need no YouTube player script solved, so
+    // they are the quick ones on a phone. The default client has to run that script,
+    // which is slow without a JavaScript runtime, so it goes after them.
+    _Strategy('android_vr', 'android_vr', false),
+    _Strategy('ios', 'ios', false),
     _Strategy('default', null, false),
     _Strategy('default+cookies', null, true),
     _Strategy('tv+cookies', 'tv', true),
     _Strategy('mweb+cookies', 'mweb', true),
-    _Strategy('android_vr', 'android_vr', false),
-    _Strategy('ios', 'ios', false),
   ];
 
   static int preferredStrategy = 0;
+  // The first run pays for loading yt-dlp, later ones should be quick: a stuck attempt
+  // is cut off after 12 s so the next strategy starts (it used to wait 40 s every time).
+  static bool _warm = false;
   // yt-dlp runs on the phone's CPU: two runs at once make each far slower.
   static int _active = 0;
   static bool get isBusy => _active > 0;
@@ -43,7 +49,7 @@ class AudioUrlResolver {
   static int get strategyCount => _strategies.length;
   static String strategyLabel(int i) => _strategies[i].label;
 
-  static const String _prefKey = 'preferred_strategy_v2';
+  static const String _prefKey = 'preferred_strategy_v3';
 
   static Future<void> loadPreferred() async {
     final prefs = await SharedPreferences.getInstance();
@@ -131,7 +137,11 @@ class AudioUrlResolver {
     await ensureInitialized();
 
     final s = _strategies[strategyIndex];
-    final options = <String, String>{};
+    final options = <String, String>{
+      // fail fast on a dead connection instead of waiting on yt-dlp's long defaults
+      '--socket-timeout': '10',
+      '--extractor-retries': '1',
+    };
     if (s.client != null) {
       options['--extractor-args'] = 'youtube:player_client=${s.client}';
     }
@@ -150,7 +160,7 @@ class AudioUrlResolver {
       try {
         return await _youtubeDL
             .getVideoInfoWithOptions('https://www.youtube.com/watch?v=$videoId', o)
-            .timeout(const Duration(seconds: 40));
+            .timeout(Duration(seconds: _warm ? 12 : 40));
       } finally {
         _active--;
       }
@@ -171,6 +181,7 @@ class AudioUrlResolver {
       debugPrint('[$videoId] ${s.label}: blocked, retrying with cookies');
       info = await fetch({...options, '--cookies': f.path});
     }
+    _warm = true;
     debugPrint('[$videoId] ${s.label}: yt-dlp took ${sw.elapsedMilliseconds}ms');
 
     final audioUrl = _pickAudioUrl(info);
