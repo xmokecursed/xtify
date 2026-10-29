@@ -54,7 +54,9 @@ void main() async {
   }
   runApp(const XtifyApp());
   // Initialize extractor in background (don't await)
-  AudioUrlResolver.ensureInitialized().catchError((e) {
+  AudioUrlResolver.ensureInitialized()
+      .then((_) => AudioUrlResolver.ensureModern()) // a new enough yt-dlp before the first song
+      .catchError((e) {
     debugPrint('Extractor init error (will retry on first use): $e');
   });
   // Refresh home feeds in the background (cached for 6 hours)

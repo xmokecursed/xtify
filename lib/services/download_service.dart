@@ -369,7 +369,7 @@ class DownloadService {
       final label = AudioUrlResolver.strategyLabel(idx);
       ResolvedAudioUrl r;
       try {
-        r = await AudioUrlResolver().resolve(t.id, strategyIndex: idx);
+        r = await AudioUrlResolver().resolve(t.id, strategyIndex: idx, background: true);
       } catch (e) {
         errors.add('$label: $e');
         if (e is TimeoutException) break;
