@@ -211,11 +211,17 @@ class AudioUrlResolver {
   /// Run after a googlevideo link failed: asks for the start of it in several ways and logs
   /// what each gets, so the log shows which kind of request YouTube accepts. Changes nothing.
   static Future<void> probe(String url) async {
-    const ranges = <String, String?>{
+    final clen = int.tryParse(Uri.parse(url).queryParameters['clen'] ?? '');
+    final ranges = <String, String?>{
       '2 bytes': 'bytes=0-1',
-      'open-ended': 'bytes=0-',
+      '256 KiB': 'bytes=0-262143',
       '1 MiB': 'bytes=0-1048575',
-      '10 MiB': 'bytes=0-10485759',
+      '1.5 MiB': 'bytes=0-1572863',
+      '2 MiB': 'bytes=0-2097151',
+      // the end of the file: tells whether a range that reaches the last byte is the problem
+      if (clen != null && clen > 204800)
+        'last 100 KiB': 'bytes=${clen - 102400}-${clen - 1}',
+      'open-ended': 'bytes=0-',
       'no range': null,
     };
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);

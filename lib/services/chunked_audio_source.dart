@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' show min;
+import 'dart:math' show max, min;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -18,6 +18,12 @@ AudioSource audioSourceFor(String url, {Map<String, String>? headers, dynamic ta
   );
 }
 
+class _Piece {
+  final HttpClientResponse res;
+  final int to; // exclusive end of the range that was asked for
+  _Piece(this.res, this.to);
+}
+
 class _Refused implements Exception {
   final int status;
   final String what;
@@ -26,14 +32,15 @@ class _Refused implements Exception {
   String toString() => 'YouTube answered $status for $what';
 }
 
-/// Plays a YouTube (googlevideo) link by asking for it in bounded pieces, like yt-dlp does.
+/// Plays a YouTube (googlevideo) link by asking for it in small bounded pieces.
 ///
-/// These links answer 403 to a request with no Range header and to an open-ended one
-/// ("bytes=0-"), while a bounded range gets 206 (the app's probe lines showed this). The
-/// player always starts a song with no Range header, so it cannot open the link by itself.
-/// This source sits between: the player asks it for a range, it fetches that range from
-/// YouTube in pieces of [_chunk] bytes and hands the bytes over. Seeking works because the
-/// player's own range is passed on.
+/// These links answer 403 to a request with no Range header, to an open-ended one
+/// ("bytes=0-") and to any range bigger than about 1 MiB, while a range of 1 MiB or less gets
+/// 206 (the app's probe lines showed exactly this). The player always starts a song with no
+/// Range header, so it cannot open the link by itself. This source sits between: the player
+/// asks it for a range, it fetches that range from YouTube in pieces of [_size] bytes and
+/// hands the bytes over. Seeking works because the player's own range is passed on. If a
+/// piece is refused with 403 the size is halved (down to [_minSize]) and remembered.
 class ChunkedHttpAudioSource extends StreamAudioSource {
   ChunkedHttpAudioSource(this.uri, {Map<String, String> headers = const {}, super.tag})
       : headers = {
@@ -44,7 +51,8 @@ class ChunkedHttpAudioSource extends StreamAudioSource {
   final Uri uri;
   final Map<String, String> headers;
 
-  static const int _chunk = 4 * 1024 * 1024; // a bounded piece (yt-dlp uses 10 MiB)
+  static int _size = 1024 * 1024; // accepted in the probe; bigger ones got 403
+  static const int _minSize = 128 * 1024;
   static const String _fallbackUserAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
       'Chrome/141.0.0.0 Safari/537.36';
@@ -78,8 +86,7 @@ class ChunkedHttpAudioSource extends StreamAudioSource {
           await res.drain<void>().timeout(const Duration(seconds: 2));
         } catch (_) {}
         throw _Refused(status, what);
-      } on _Refused catch (e) {
-        debugPrint('chunked source: failed, $e');
+      } on _Refused {
         rethrow;
       } catch (e) {
         // a dropped connection or a slow answer: one more try, then give up
@@ -92,14 +99,33 @@ class ChunkedHttpAudioSource extends StreamAudioSource {
     }
   }
 
+  /// Asks for the next piece, at most [_size] bytes from [from] and never past [limit]
+  /// (exclusive, null when the length is unknown). A 403 halves the piece size and asks again.
+  Future<_Piece> _openPiece(int from, int? limit) async {
+    while (true) {
+      final to = limit == null ? from + _size : min(from + _size, limit);
+      try {
+        return _Piece(await _open(from, to - 1), to);
+      } on _Refused catch (e) {
+        final span = to - from;
+        if (e.status != 403 || span <= _minSize) {
+          debugPrint('chunked source: failed, $e');
+          rethrow;
+        }
+        _size = max(_minSize, span ~/ 2);
+        debugPrint('chunked source: 403 for $span bytes, trying pieces of ${_size ~/ 1024} KiB');
+      }
+    }
+  }
+
   @override
   Future<StreamAudioResponse> request([int? start, int? end]) async {
     final sw = Stopwatch()..start();
     final from = start ?? 0;
     final known = _total ?? int.tryParse(uri.queryParameters['clen'] ?? '');
     final wantEnd = end ?? known; // exclusive; null while the length is unknown
-    final firstEnd = wantEnd == null ? from + _chunk : min(from + _chunk, wantEnd);
-    final first = await _open(from, firstEnd - 1);
+    final piece = await _openPiece(from, wantEnd);
+    final first = piece.res;
 
     var total = known;
     if (first.statusCode == 200) {
@@ -119,7 +145,7 @@ class ChunkedHttpAudioSource extends StreamAudioSource {
       sourceLength: total,
       contentLength: stopAt == null ? null : stopAt - from,
       offset: from,
-      stream: _pieces(first, from, firstEnd, stopAt),
+      stream: _pieces(first, from, piece.to, stopAt),
       contentType: _type,
     );
   }
@@ -141,9 +167,9 @@ class ChunkedHttpAudioSource extends StreamAudioSource {
       if (got == 0) return; // nothing came back: stop instead of asking forever
       if (stopAt != null && pos >= stopAt) return;
       if (stopAt == null && pos < asked) return; // shorter than asked for: that was the end
-      final to = stopAt == null ? pos + _chunk : min(pos + _chunk, stopAt);
-      res = await _open(pos, to - 1);
-      asked = to;
+      final next = await _openPiece(pos, stopAt);
+      res = next.res;
+      asked = next.to;
     }
   }
 }
