@@ -8,12 +8,17 @@ class ApiService {
 
   // Search for tracks (using YouTube search endpoint)
   static Future<List<Track>> searchTracks(String query, {int limit = 25}) async {
-    final response = await http.get(
-      Uri.parse('$_baseUrl/search').replace(queryParameters: {
-        'q': query,
-        'limit': '$limit',
-      }),
-    ).timeout(const Duration(seconds: 60));
+    final searchUri = Uri.parse('$_baseUrl/search').replace(queryParameters: {
+      'q': query,
+      'limit': '$limit',
+    });
+    var response = await http.get(searchUri).timeout(const Duration(seconds: 60));
+    // The free server answers 502 or 504 while it wakes up or restarts: wait a little and ask
+    // again (twice at most) instead of failing the search straight away.
+    for (var retry = 1; retry <= 2 && (response.statusCode == 502 || response.statusCode == 504); retry++) {
+      await Future<void>.delayed(Duration(seconds: 3 * retry));
+      response = await http.get(searchUri).timeout(const Duration(seconds: 60));
+    }
 
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body);
