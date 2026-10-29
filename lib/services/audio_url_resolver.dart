@@ -75,7 +75,7 @@ class AudioUrlResolver {
     final item = _cacheUtil.get(videoId);
     if (item == null) return null;
     final url = item['url'] as String;
-    return ResolvedAudioUrl(url: url, headers: _withRange(url, const {}));
+    return ResolvedAudioUrl(url: url, headers: const {});
   }
 
   /// Call only after the URL actually played.
@@ -190,17 +190,7 @@ class AudioUrlResolver {
     final audioUrl = format?.url;
     if (format == null || audioUrl == null) throw Exception('no audio format returned');
     debugPrint('[$videoId] ${s.label}: audio url from ${Uri.parse(audioUrl).host}');
-    return ResolvedAudioUrl(url: audioUrl, headers: _withRange(audioUrl, _headersOf(format)));
-  }
-
-  /// googlevideo answers 403 to a request with no Range header (your probe: 206 with
-  /// `bytes=0-1`, 403 without), and the player sends none for a song from its start. A
-  /// `Range: bytes=0-` makes it look like a browser's media request; when the player seeks it
-  /// writes its own Range over this one.
-  static Map<String, String> _withRange(String url, Map<String, String> h) {
-    if (!url.contains('googlevideo.com')) return h;
-    if (h.keys.any((k) => k.toLowerCase() == 'range')) return h;
-    return {...h, 'Range': 'bytes=0-'};
+    return ResolvedAudioUrl(url: audioUrl, headers: _headersOf(format));
   }
 
   /// The headers yt-dlp says this link needs (YouTube ties a link to the client that asked
@@ -218,31 +208,31 @@ class AudioUrlResolver {
     return const {};
   }
 
-  /// Run after a googlevideo link answered 403: asks for the first 2 bytes in a few ways and
-  /// logs what each gets, so the log shows which request YouTube accepts. Changes nothing.
+  /// Run after a googlevideo link failed: asks for the start of it in several ways and logs
+  /// what each gets, so the log shows which kind of request YouTube accepts. Changes nothing.
   static Future<void> probe(String url) async {
-    const uas = {
-      'no user agent': null,
-      'chrome': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-          'Chrome/141.0.0.0 Safari/537.36',
-      'youtube vr app':
-          'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
+    const ranges = <String, String?>{
+      '2 bytes': 'bytes=0-1',
+      'open-ended': 'bytes=0-',
+      '1 MiB': 'bytes=0-1048575',
+      '10 MiB': 'bytes=0-10485759',
+      'no range': null,
     };
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
-      for (final e in uas.entries) {
-        for (final range in ['bytes=0-1', null]) {
+      for (final e in ranges.entries) {
+        try {
+          final req = await client.getUrl(Uri.parse(url));
+          req.headers.removeAll(HttpHeaders.userAgentHeader);
+          if (e.value != null) req.headers.set(HttpHeaders.rangeHeader, e.value!);
+          final res = await req.close().timeout(const Duration(seconds: 8));
+          // read the first piece only, the point is the status
           try {
-            final req = await client.getUrl(Uri.parse(url));
-            req.headers.removeAll(HttpHeaders.userAgentHeader);
-            if (e.value != null) req.headers.set(HttpHeaders.userAgentHeader, e.value!);
-            if (range != null) req.headers.set(HttpHeaders.rangeHeader, range);
-            final res = await req.close().timeout(const Duration(seconds: 8));
-            await res.drain<void>().timeout(const Duration(seconds: 2), onTimeout: () {});
-            debugPrint('probe [${e.key}, ${range ?? 'no range'}]: HTTP ${res.statusCode}');
-          } catch (err) {
-            debugPrint('probe [${e.key}, ${range ?? 'no range'}]: failed ${err.runtimeType}');
-          }
+            await res.first.timeout(const Duration(seconds: 4));
+          } catch (_) {}
+          debugPrint('probe [${e.key}]: HTTP ${res.statusCode}');
+        } catch (err) {
+          debugPrint('probe [${e.key}]: failed ${err.runtimeType}');
         }
       }
     } finally {

@@ -8,6 +8,7 @@ import '../services/download_service.dart';
 import '../services/history_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auto_queue_service.dart';
+import 'chunked_audio_source.dart';
 import 'cookie_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:rxdart/rxdart.dart';
@@ -512,11 +513,10 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     _settingSource = true;
     try {
       final sw = Stopwatch()..start();
-      await _player.setAudioSource(AudioSource.uri(
-        Uri.parse(r.url),
-        headers: r.headers.isEmpty ? null : r.headers,
-        tag: item,
-      ), initialPosition: start);
+      await _player.setAudioSource(
+        audioSourceFor(r.url, headers: r.headers, tag: item),
+        initialPosition: start,
+      );
       debugPrint('setAudioSource ($label) took ${sw.elapsedMilliseconds}ms');
       if (token != _playToken) return false;
       _sourceLoaded = true;
@@ -679,11 +679,9 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       _tracksById[next.id] = next;
       _queuedUrls[next.id] = resolved;
       await _removeWaiting(); // nothing may be waiting here: never two songs queued
-      await _player.addAudioSource(AudioSource.uri(
-        Uri.parse(resolved.url),
-        headers: resolved.headers.isEmpty ? null : resolved.headers,
-        tag: item,
-      ));
+      await _player.addAudioSource(
+        audioSourceFor(resolved.url, headers: resolved.headers, tag: item),
+      );
       if (stale()) {
         // another song started, or what comes next changed, while this one loaded
         await _removeWaiting();
