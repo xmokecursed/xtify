@@ -34,6 +34,7 @@ class YtDlpUpdateService {
           final result = await YoutubeDLFlutter.instance.updateYoutubeDL();
           if (result.status == OperationStatus.success) {
             await prefs.setInt(_lastUpdateKey, now);
+            await AudioUrlResolver.rememberVersion(result.version);
             debugPrint('yt-dlp updated, version: ${result.version}');
           } else {
             debugPrint('yt-dlp update failed: ${result.errorMessage}');

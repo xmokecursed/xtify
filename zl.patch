@@ -1,0 +1,634 @@
+diff --git a/lib/main.dart b/lib/main.dart
+index 411ac5b..8130796 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -54,7 +54,9 @@ void main() async {
+   }
+   runApp(const XtifyApp());
+   // Initialize extractor in background (don't await)
+-  AudioUrlResolver.ensureInitialized().catchError((e) {
++  AudioUrlResolver.ensureInitialized()
++      .then((_) => AudioUrlResolver.ensureModern()) // a new enough yt-dlp before the first song
++      .catchError((e) {
+     debugPrint('Extractor init error (will retry on first use): $e');
+   });
+   // Refresh home feeds in the background (cached for 6 hours)
+diff --git a/lib/services/audio_service.dart b/lib/services/audio_service.dart
+index 74527f2..9c522f2 100644
+--- a/lib/services/audio_service.dart
++++ b/lib/services/audio_service.dart
+@@ -129,6 +129,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
+   // ---------------- self-healing ----------------
+   Timer? _watchdogTimer;
+   bool _recovering = false;
++  bool _gaveUp = false; // recovery stopped after repeated failures: wait for the user
+   int _recoveryStreak = 0;
+   DateTime _lastRecovery = DateTime.fromMillisecondsSinceEpoch(0);
+   Duration _wdPos = Duration.zero;
+@@ -143,7 +144,13 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
+     _recoveryStreak = now.difference(_lastRecovery) < const Duration(seconds: 30)
+         ? _recoveryStreak + 1
+         : 0;
+-    if (!force && _recoveryStreak >= 3) return;
++    if (!force && _recoveryStreak >= 3) {
++      // say it once, and let the watchdog stay quiet until the user presses play
++      if (!_gaveUp) debugPrint('recovery: giving up after $_recoveryStreak quick failures, press play to retry');
++      _gaveUp = true;
++      return;
++    }
++    _gaveUp = false;
+     _recovering = true;
+     _lastRecovery = now;
+     final pos = at ?? _player.position;
+@@ -161,7 +168,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
+   /// Every 4 s: if audio should be playing but is stuck (frozen or buffering far too long), reload it.
+   void _watchdog() {
+     final now = DateTime.now();
+-    if (!_sourceLoaded || _recovering || _settingSource || _currentTrack == null) {
++    if (!_sourceLoaded || _recovering || _settingSource || _gaveUp || _currentTrack == null) {
+       _wdAt = now;
+       return;
+     }
+@@ -414,6 +421,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
+   Future<void> playTrack(Track track,
+       {bool userInitiated = true, bool keepContext = false, Duration? startAt}) async {
+     final token = ++_playToken;
++    _gaveUp = false; // a new attempt: the watchdog may watch again
+     // a queued song that was loaded as "next" goes back to the front of the queue
+     if (_preloaded != null && _preloadedFromUser) _userQueue = [_preloaded!, ..._userQueue];
+     _preloaded = null;
+@@ -857,16 +865,16 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
+     for (var i = 0; i < 80 && AudioUrlResolver.isBusy; i++) {
+       await Future.delayed(const Duration(milliseconds: 500));
+     }
+-    final n = AudioUrlResolver.strategyCount;    
+-    for (var k = 0; k < 2; k++) {      
+-      final idx = (AudioUrlResolver.preferredStrategy + k) % n;      
+-      try {        
+-        return await AudioUrlResolver().resolve(videoId, strategyIndex: idx);      
+-      } catch (e) {        
+-        debugPrint('queue resolve failed (${AudioUrlResolver.strategyLabel(idx)}): ${_short(e)}');      
+-      }    }    
+-    return null;  
+-  }  
++    // one try with the usual strategy: if it fails, the next attempt picks another candidate
++    // (a second run of the same client only holds up the song the user may tap meanwhile)
++    final idx = AudioUrlResolver.preferredStrategy % AudioUrlResolver.strategyCount;
++    try {
++      return await AudioUrlResolver().resolve(videoId, strategyIndex: idx, background: true);
++    } catch (e) {
++      debugPrint('queue resolve failed (${AudioUrlResolver.strategyLabel(idx)}): ${_short(e)}');
++    }
++    return null;
++  }
+ 
+   /// The player moved on to the pre-loaded song by itself.  
+   void _onIndexChanged(int? index) {    
+diff --git a/lib/services/audio_url_resolver.dart b/lib/services/audio_url_resolver.dart
+index 69ce773..480d2de 100644
+--- a/lib/services/audio_url_resolver.dart
++++ b/lib/services/audio_url_resolver.dart
+@@ -1,7 +1,9 @@
++import 'dart:async';
+ import 'dart:io';
+ import 'package:extractor/extractor.dart';
+ import 'package:flutter/foundation.dart';
+ import '../services/cookie_service.dart';
++import 'chunked_audio_source.dart' show linkProblem;
+ import 'cookie_refresh_service.dart';
+ import '../utils/cache_util.dart';
+ import 'package:shared_preferences/shared_preferences.dart';
+@@ -26,11 +28,12 @@ class AudioUrlResolver {
+ 
+   // Tried in order, starting with the one that last worked.
+   static const List<_Strategy> _strategies = [
+-    // Clients that hand out direct audio links need no YouTube player script solved, so
+-    // they are the quick ones on a phone. The default client has to run that script,
+-    // which is slow without a JavaScript runtime, so it goes after them.
+-    _Strategy('android_vr', 'android_vr', false),
+-    _Strategy('ios', 'ios', false),
++    // "visionos" is what yt-dlp itself picks on a phone, where there is no JavaScript
++    // runtime: it needs no PO token and no player script, so it is quick and its links play to
++    // the end. The android_vr and ios clients used here before are gone on purpose: YouTube
++    // now cuts their links off after about 1 MiB (a minute of audio) or refuses them, and
++    // yt-dlp's own notes say the same.
++    _Strategy('visionos', 'visionos', false),
+     _Strategy('default', null, false),
+     _Strategy('default+cookies', null, true),
+     _Strategy('tv+cookies', 'tv', true),
+@@ -38,19 +41,25 @@ class AudioUrlResolver {
+   ];
+ 
+   static int preferredStrategy = 0;
+-  // The first run pays for loading yt-dlp, later ones should be quick: a stuck attempt
+-  // is cut off after 12 s so the next strategy starts (it used to wait 40 s every time).
++  // The first run pays for loading yt-dlp, later ones are quicker: a stuck run is cut off
++  // after 20 s so the next strategy starts (the first one gets 45 s).
+   static bool _warm = false;
+-  // yt-dlp runs on the phone's CPU: two runs at once make each far slower.
+-  static int _active = 0;
+-  static bool get isBusy => _active > 0;
++
++  // The plugin runs one yt-dlp at a time on a single thread; a second call just waits in its
++  // queue. Waiting here instead keeps the time limit for the run itself (it used to count the
++  // wait, so a song picked while another was being looked up timed out), and lets a song the
++  // user is waiting for go before the background ones.
++  static bool _running = false;
++  static int _foregroundWaiting = 0;
++  static int _runId = 0;
++  static bool get isBusy => _running || _foregroundWaiting > 0;
+ 
+   // After a block is detected, go straight to cookies for a while.
+   static DateTime _cookiesFirstUntil = DateTime.fromMillisecondsSinceEpoch(0);
+   static int get strategyCount => _strategies.length;
+   static String strategyLabel(int i) => _strategies[i].label;
+ 
+-  static const String _prefKey = 'preferred_strategy_v3';
++  static const String _prefKey = 'preferred_strategy_v4';
+ 
+   static Future<void> loadPreferred() async {
+     final prefs = await SharedPreferences.getInstance();
+@@ -71,6 +80,85 @@ class AudioUrlResolver {
+     debugPrint('yt-dlp initialized in ${DateTime.now().difference(start).inMilliseconds}ms');
+   }
+ 
++  // ---------------- yt-dlp version ----------------
++
++  // The yt-dlp that ships inside the app is from Nov 2025 and knows none of the clients that
++  // work today. 2026.08.19 is the first release that defaults to "visionos" on a phone (the
++  // 2026.07.04 one still defaults to android_vr).
++  static const int _minYtDlp = 20260819;
++  static const String _verKey = 'yt_dlp_version_v1';
++  static const String _lastUpdateKey = 'yt_dlp_last_update'; // also used by YtDlpUpdateService
++  static Future<void>? _modernFuture;
++  static bool _modernDone = false;
++  static DateTime _modernRetryAt = DateTime.fromMillisecondsSinceEpoch(0);
++
++  /// 2026.10.26 -> 20261026 (0 when there is no date in [version]).
++  static int _dateOf(String? version) {
++    final m = RegExp(r'(\d{4})\.(\d{1,2})\.(\d{1,2})').firstMatch(version ?? '');
++    if (m == null) return 0;
++    return int.parse(m[1]!) * 10000 + int.parse(m[2]!) * 100 + int.parse(m[3]!);
++  }
++
++  /// Remembers the yt-dlp version that was installed here, so later starts need not ask for it.
++  static Future<void> rememberVersion(String? version) async {
++    if (_dateOf(version) == 0) return;
++    final p = await SharedPreferences.getInstance();
++    await p.setString(_verKey, version!);
++  }
++
++  /// Makes sure the yt-dlp inside the app is new enough, updating it first if it is not.
++  /// Never throws. Costs nothing once a new enough version is on record; if the update cannot
++  /// be done (offline), it is tried again 10 minutes later.
++  static Future<void> ensureModern() {
++    if (_modernDone) return Future<void>.value();
++    final running = _modernFuture;
++    if (running != null) return running;
++    if (DateTime.now().isBefore(_modernRetryAt)) return Future<void>.value();
++    return _modernFuture = _checkYtDlp().then((ok) {
++      _modernFuture = null;
++      if (ok) {
++        _modernDone = true;
++      } else {
++        _modernRetryAt = DateTime.now().add(const Duration(minutes: 10));
++      }
++    });
++  }
++
++  /// True when yt-dlp is new enough (or it cannot be told), false when updating it failed.
++  static Future<bool> _checkYtDlp() async {
++    try {
++      final prefs = await SharedPreferences.getInstance();
++      if (_dateOf(prefs.getString(_verKey)) >= _minYtDlp) return true;
++      final shown =
++          (await _youtubeDL.getVersion().timeout(const Duration(seconds: 20))).youtubeDlVersion;
++      debugPrint('yt-dlp inside the app: $shown');
++      final have = _dateOf(shown);
++      if (have == 0) return true; // cannot tell what it is: leave it alone
++      if (have >= _minYtDlp) {
++        await prefs.setString(_verKey, shown!);
++        return true;
++      }
++      debugPrint('yt-dlp $shown is too old for YouTube now, updating it before the first song');
++      final sw = Stopwatch()..start();
++      final r = await _youtubeDL.updateYoutubeDL().timeout(const Duration(seconds: 60));
++      if (r.status != OperationStatus.success) {
++        debugPrint('yt-dlp update failed: ${r.errorMessage}');
++        return false;
++      }
++      debugPrint('yt-dlp updated to ${r.version} in ${sw.elapsedMilliseconds}ms');
++      if (_dateOf(r.version) >= _minYtDlp) {
++        await prefs.setString(_verKey, r.version!);
++        await prefs.setInt(_lastUpdateKey, DateTime.now().millisecondsSinceEpoch);
++      }
++      return true;
++    } catch (e) {
++      debugPrint('yt-dlp version check failed: $e');
++      return false;
++    }
++  }
++
++  // ---------------- cache and prefetch ----------------
++
+   static ResolvedAudioUrl? cached(String videoId) {
+     final item = _cacheUtil.get(videoId);
+     if (item == null) return null;
+@@ -80,8 +168,11 @@ class AudioUrlResolver {
+ 
+   /// Call only after the URL actually played.
+   static void markWorking(String videoId, int strategyIndex, ResolvedAudioUrl r) {
+-    preferredStrategy = strategyIndex;
+-    SharedPreferences.getInstance().then((p) => p.setInt(_prefKey, strategyIndex));
++    // a cookie strategy that rescued one song does not become the first choice for the next
++    if (!_strategies[strategyIndex].cookies) {
++      preferredStrategy = strategyIndex;
++      SharedPreferences.getInstance().then((p) => p.setInt(_prefKey, strategyIndex));
++    }
+     _cacheUtil.put(videoId, {
+       'url': r.url,
+       'timestamp': 0,
+@@ -100,7 +191,8 @@ class AudioUrlResolver {
+     if (_prefetched.containsKey(videoId) || _inflight.containsKey(videoId)) return;
+     if (cached(videoId) != null) return;
+     if (isBusy) return; // never compete with a song the user is waiting for
+-    final f = AudioUrlResolver().resolve(videoId, strategyIndex: preferredStrategy);
++    final f = AudioUrlResolver()
++        .resolve(videoId, strategyIndex: preferredStrategy, background: true);
+     _inflight[videoId] = f;
+     f
+         .then((r) => _prefetched[videoId] = r)
+@@ -132,11 +224,20 @@ class AudioUrlResolver {
+     return left < 60 ? 60 : (left > 21600 ? 21600 : left);
+   }
+ 
+-  Future<ResolvedAudioUrl> resolve(String videoId, {required int strategyIndex}) async {
++  // ---------------- resolving ----------------
++
++  /// Looks the song up with yt-dlp using strategy [strategyIndex]. [background] = nobody is
++  /// waiting for it (prefetch, the next song, a download): a song the user is waiting for
++  /// goes first.
++  Future<ResolvedAudioUrl> resolve(String videoId,
++      {required int strategyIndex, bool background = false}) async {
+     if (!RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(videoId)) {
+       throw Exception('Invalid YouTube video ID');
+     }
+     await ensureInitialized();
++    // a new enough yt-dlp first (only the very first song after an install waits for this)
++    await ensureModern().timeout(const Duration(seconds: 45),
++        onTimeout: () => debugPrint('yt-dlp update is taking long, going on without it'));
+ 
+     final s = _strategies[strategyIndex];
+     final options = <String, String>{
+@@ -147,8 +248,8 @@ class AudioUrlResolver {
+     if (s.client != null) {
+       options['--extractor-args'] = 'youtube:player_client=${s.client}';
+     }
+-    // The default client can use cookies during a block window; the
+-    // android_vr / ios clients are left alone.
++    // The default client can use cookies during a block window; the other
++    // clients are left alone.
+     final cookiesFirst =
+         s.client == null && DateTime.now().isBefore(_cookiesFirstUntil);
+     if (s.cookies || cookiesFirst) {
+@@ -156,21 +257,10 @@ class AudioUrlResolver {
+       if (f == null && s.cookies) throw Exception('not signed in (no cookie file)');
+       if (f != null) options['--cookies'] = f.path;
+     }
+-    Future<VideoInfo> fetch(Map<String, String> o) async {
+-      debugPrint('[$videoId] yt-dlp start, $_active already running');
+-      _active++;
+-      try {
+-        return await _youtubeDL
+-            .getVideoInfoWithOptions('https://www.youtube.com/watch?v=$videoId', o)
+-            .timeout(Duration(seconds: _warm ? 12 : 40));
+-      } finally {
+-        _active--;
+-      }
+-    }
+-    final sw = Stopwatch()..start();
++    final pageUrl = 'https://www.youtube.com/watch?v=$videoId';
+     VideoInfo info;
+     try {
+-      info = await fetch(options);
++      info = await _runYtDlp(videoId, s.label, pageUrl, options, background: background);
+     } catch (e) {
+       final msg = e.toString();
+       final blocked = msg.contains('429') || msg.contains('Sign in to confirm');
+@@ -181,18 +271,70 @@ class AudioUrlResolver {
+       _cookiesFirstUntil = DateTime.now().add(const Duration(minutes: 10));
+       CookieRefreshService.instance.refreshIfOlderThan(const Duration(minutes: 30));
+       debugPrint('[$videoId] ${s.label}: blocked, retrying with cookies');
+-      info = await fetch({...options, '--cookies': f.path});
++      info = await _runYtDlp(videoId, s.label, pageUrl, {...options, '--cookies': f.path},
++          background: background);
+     }
+-    _warm = true;
+-    debugPrint('[$videoId] ${s.label}: yt-dlp took ${sw.elapsedMilliseconds}ms');
+ 
+     final format = _pickFormat(info);
+     final audioUrl = format?.url;
+     if (format == null || audioUrl == null) throw Exception('no audio format returned');
+-    debugPrint('[$videoId] ${s.label}: audio url from ${Uri.parse(audioUrl).host}');
+-    return ResolvedAudioUrl(url: audioUrl, headers: _headersOf(format));
++    debugPrint('[$videoId] ${s.label}: audio url from ${Uri.parse(audioUrl).host} '
++        '(${_describe(format)})');
++    final headers = _headersOf(format);
++    // YouTube cuts some links off after the first MiB or refuses them: find out now, so the
++    // next strategy can be tried, instead of a song that stops after a minute
++    final bad = await linkProblem(audioUrl, headers: headers);
++    if (bad != null) {
++      debugPrint('[$videoId] ${s.label}: link refused, $bad');
++      throw Exception('YouTube refuses this link ($bad)');
++    }
++    return ResolvedAudioUrl(url: audioUrl, headers: headers);
+   }
+ 
++  /// One yt-dlp lookup. Only one runs at a time (see [_running]); the time limit counts from
++  /// when this one really starts.
++  static Future<VideoInfo> _runYtDlp(
++      String videoId, String label, String pageUrl, Map<String, String> options,
++      {required bool background}) async {
++    final queued = Stopwatch()..start();
++    if (!background) _foregroundWaiting++;
++    try {
++      while (_running || (background && _foregroundWaiting > 0)) {
++        await Future<void>.delayed(const Duration(milliseconds: 100));
++      }
++      _running = true;
++    } finally {
++      if (!background) _foregroundWaiting--;
++    }
++    final run = ++_runId;
++    void free() {
++      if (_runId == run) _running = false;
++    }
++
++    // if the plugin never answers, do not keep every later lookup waiting forever
++    final guard = Timer(const Duration(seconds: 90), free);
++    final waited = queued.elapsedMilliseconds;
++    debugPrint('[$videoId] $label: yt-dlp start'
++        '${waited > 300 ? ' (waited ${waited}ms for another lookup)' : ''}');
++    final sw = Stopwatch()..start();
++    final call = _youtubeDL.getVideoInfoWithOptions(pageUrl, options);
++    // The lane opens again when the plugin's call really ends, even if we gave up waiting.
++    unawaited(call.then<void>((_) {
++      guard.cancel();
++      free();
++    }, onError: (Object _) {
++      guard.cancel();
++      free();
++    }));
++    final info = await call.timeout(Duration(seconds: _warm ? 20 : 45));
++    _warm = true;
++    debugPrint('[$videoId] $label: yt-dlp took ${sw.elapsedMilliseconds}ms');
++    return info;
++  }
++
++  static String _describe(VideoFormat f) =>
++      '${f.formatId ?? '?'} ${f.ext ?? '?'}${f.tbr == null ? '' : ' ${f.tbr}k'}';
++
+   /// The headers yt-dlp says this link needs (YouTube ties a link to the client that asked
+   /// for it, usually through the User-Agent). Empty if the plugin does not expose them.
+   static Map<String, String> _headersOf(VideoFormat f) {
+@@ -246,14 +388,24 @@ class AudioUrlResolver {
+     }
+   }
+ 
++  /// A playlist or manifest address (HLS / DASH), not a file that can be read directly.
++  static bool _isPlaylist(String url) =>
++      url.contains('/api/manifest/') || url.contains('.m3u8') || url.contains('.mpd');
++
+   static VideoFormat? _pickFormat(VideoInfo info) {
+     final formats = info.formats;
+     if (formats == null) return null;
+     VideoFormat? best; // audio-only, m4a first, then highest bitrate
+     VideoFormat? fallback; // anything with audio
++    VideoFormat? playlist; // an HLS / DASH playlist: only when there is nothing else
+     for (final f in formats) {
+-      if (f == null || (f.url ?? '').isEmpty) continue;
++      final url = f?.url ?? '';
++      if (f == null || url.isEmpty) continue;
+       if (f.acodec == null || f.acodec == 'none') continue;
++      if (_isPlaylist(url)) {
++        playlist ??= f;
++        continue;
++      }
+       if (f.vcodec != 'none') {
+         fallback ??= f;
+         continue;
+@@ -267,6 +419,6 @@ class AudioUrlResolver {
+         best = f;
+       }
+     }
+-    return best ?? fallback;
++    return best ?? fallback ?? playlist;
+   }
+ }
+diff --git a/lib/services/chunked_audio_source.dart b/lib/services/chunked_audio_source.dart
+index 1d80eff..16020a2 100644
+--- a/lib/services/chunked_audio_source.dart
++++ b/lib/services/chunked_audio_source.dart
+@@ -1,14 +1,26 @@
+-import 'dart:async';
+ import 'dart:io';
+ import 'dart:math' show max, min;
+ import 'package:flutter/foundation.dart';
+ import 'package:just_audio/just_audio.dart';
+ 
+-/// What the player is given for a resolved link. A googlevideo link is read in bounded
++const String _fallbackUserAgent =
++    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
++    'Chrome/141.0.0.0 Safari/537.36';
++
++final HttpClient _http = HttpClient()
++  ..autoUncompress = false
++  ..connectionTimeout = const Duration(seconds: 10)
++  ..idleTimeout = const Duration(seconds: 30);
++
++/// A direct media link on googlevideo (not a playlist or manifest).
++bool _isDirectMedia(Uri uri) =>
++    uri.host.endsWith('googlevideo.com') && uri.path.contains('videoplayback');
++
++/// What the player is given for a resolved link. A direct googlevideo link is read in bounded
+ /// pieces ([ChunkedHttpAudioSource]); any other link goes straight to the player.
+ AudioSource audioSourceFor(String url, {Map<String, String>? headers, dynamic tag}) {
+   final uri = Uri.parse(url);
+-  if (uri.host.endsWith('googlevideo.com')) {
++  if (_isDirectMedia(uri)) {
+     return ChunkedHttpAudioSource(uri, headers: headers ?? const {}, tag: tag);
+   }
+   return AudioSource.uri(
+@@ -18,6 +30,57 @@ AudioSource audioSourceFor(String url, {Map<String, String>? headers, dynamic ta
+   );
+ }
+ 
++/// One bounded request for bytes [from] to [toInclusive] of [uri]. The answer is not read here.
++Future<HttpClientResponse> _rangeRequest(
++    Uri uri, Map<String, String> headers, int from, int toInclusive) async {
++  final req = await _http.getUrl(uri);
++  headers.forEach((k, v) => req.headers.set(k, v));
++  if (!headers.keys.any((k) => k.toLowerCase() == 'user-agent')) {
++    req.headers.set(HttpHeaders.userAgentHeader, _fallbackUserAgent);
++  }
++  req.headers.set(HttpHeaders.rangeHeader, 'bytes=$from-$toInclusive');
++  return req.close().timeout(const Duration(seconds: 15));
++}
++
++/// Asks for two bytes from the middle of the file, the way the player will, and says what is
++/// wrong with the link: null when it works, or when the check could not be made.
++///
++/// YouTube cuts some links off after about 1 MiB (a minute of audio) and refuses others
++/// outright. Asking past the first MiB shows that now, instead of a minute into the song.
++Future<String?> linkProblem(String url, {Map<String, String> headers = const {}}) async {
++  final uri = Uri.tryParse(url);
++  if (uri == null || !_isDirectMedia(uri)) return null;
++  final clen = int.tryParse(uri.queryParameters['clen'] ?? '');
++  // past the first MiB, where the cut-off links stop working; near the end of a short file
++  final at = clen == null ? 0 : max(0, min(clen - 2, max(1310720, clen ~/ 2)));
++  final what = 'bytes=$at-${at + 1}';
++  final sw = Stopwatch()..start();
++  try {
++    final res = await _rangeRequest(uri, headers, at, at + 1);
++    final code = res.statusCode;
++    try {
++      if (code == 206 || code >= 400) {
++        // a tiny body: read it so the connection can be used again by the player
++        await res.drain<void>().timeout(const Duration(seconds: 3));
++      } else {
++        // the server ignored the range and is sending the whole file: stop it
++        await res.first.timeout(const Duration(seconds: 3));
++      }
++    } catch (_) {}
++    if (code == 200 || code == 206) {
++      debugPrint('link works: HTTP $code for $what, took ${sw.elapsedMilliseconds}ms');
++      return null;
++    }
++    // 429 (slow down) and 416 (a size that does not match) say nothing about the link itself
++    if (code >= 400 && code < 500 && code != 429 && code != 416) return 'HTTP $code for $what';
++    debugPrint('link check skipped: HTTP $code for $what');
++    return null;
++  } catch (e) {
++    debugPrint('link check skipped (${e.runtimeType})');
++    return null;
++  }
++}
++
+ class _Piece {
+   final HttpClientResponse res;
+   final int to; // exclusive end of the range that was asked for
+@@ -32,15 +95,13 @@ class _Refused implements Exception {
+   String toString() => 'YouTube answered $status for $what';
+ }
+ 
+-/// Plays a YouTube (googlevideo) link by asking for it in small bounded pieces.
++/// Plays a YouTube (googlevideo) link by asking for it in bounded pieces.
+ ///
+-/// These links answer 403 to a request with no Range header, to an open-ended one
+-/// ("bytes=0-") and to any range bigger than about 1 MiB, while a range of 1 MiB or less gets
+-/// 206 (the app's probe lines showed exactly this). The player always starts a song with no
+-/// Range header, so it cannot open the link by itself. This source sits between: the player
+-/// asks it for a range, it fetches that range from YouTube in pieces of [_size] bytes and
+-/// hands the bytes over. Seeking works because the player's own range is passed on. If a
+-/// piece is refused with 403 the size is halved (down to [_minSize]) and remembered.
++/// These links answer 403 to a request with no Range header and to an open-ended one
++/// ("bytes=0-"). The player always starts a song with no Range header, so it cannot open the
++/// link by itself. This source sits between: the player asks it for a range, it fetches that
++/// range from YouTube in bounded pieces and hands the bytes over. Seeking works because the
++/// player's own range is passed on.
+ class ChunkedHttpAudioSource extends StreamAudioSource {
+   ChunkedHttpAudioSource(this.uri, {Map<String, String> headers = const {}, super.tag})
+       : headers = {
+@@ -51,15 +112,11 @@ class ChunkedHttpAudioSource extends StreamAudioSource {
+   final Uri uri;
+   final Map<String, String> headers;
+ 
+-  static int _size = 1024 * 1024; // accepted in the probe; bigger ones got 403
+-  static const int _minSize = 128 * 1024;
+-  static const String _fallbackUserAgent =
+-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+-      'Chrome/141.0.0.0 Safari/537.36';
+-  static final HttpClient _client = HttpClient()
+-    ..autoUncompress = false
+-    ..connectionTimeout = const Duration(seconds: 10)
+-    ..idleTimeout = const Duration(seconds: 30);
++  // yt-dlp itself downloads these links in pieces of 10 MiB, so 4 MiB is safe. If a piece is
++  // refused with 403, half of it is tried; the smaller size is kept for this song only when
++  // the smaller request works (a refusal that has nothing to do with the size never shrinks it).
++  int _size = 4 * 1024 * 1024;
++  static const int _minSize = 256 * 1024;
+ 
+   int? _total;
+ 
+@@ -73,13 +130,7 @@ class ChunkedHttpAudioSource extends StreamAudioSource {
+     final what = 'bytes=$from-$toInclusive';
+     for (var attempt = 0;; attempt++) {
+       try {
+-        final req = await _client.getUrl(uri);
+-        headers.forEach((k, v) => req.headers.set(k, v));
+-        if (!headers.keys.any((k) => k.toLowerCase() == 'user-agent')) {
+-          req.headers.set(HttpHeaders.userAgentHeader, _fallbackUserAgent);
+-        }
+-        req.headers.set(HttpHeaders.rangeHeader, what);
+-        final res = await req.close().timeout(const Duration(seconds: 15));
++        final res = await _rangeRequest(uri, headers, from, toInclusive);
+         if (res.statusCode == 206 || (res.statusCode == 200 && from == 0)) return res;
+         final status = res.statusCode;
+         try {
+@@ -100,20 +151,26 @@ class ChunkedHttpAudioSource extends StreamAudioSource {
+   }
+ 
+   /// Asks for the next piece, at most [_size] bytes from [from] and never past [limit]
+-  /// (exclusive, null when the length is unknown). A 403 halves the piece size and asks again.
++  /// (exclusive, null when the length is unknown). A 403 halves the piece and asks again.
+   Future<_Piece> _openPiece(int from, int? limit) async {
++    var size = _size;
+     while (true) {
+-      final to = limit == null ? from + _size : min(from + _size, limit);
++      final to = limit == null ? from + size : min(from + size, limit);
+       try {
+-        return _Piece(await _open(from, to - 1), to);
++        final piece = _Piece(await _open(from, to - 1), to);
++        if (size < _size) {
++          _size = size; // the smaller request worked where the bigger one was refused
++          debugPrint('chunked source: pieces are now ${size ~/ 1024} KiB');
++        }
++        return piece;
+       } on _Refused catch (e) {
+         final span = to - from;
+         if (e.status != 403 || span <= _minSize) {
+           debugPrint('chunked source: failed, $e');
+           rethrow;
+         }
+-        _size = max(_minSize, span ~/ 2);
+-        debugPrint('chunked source: 403 for $span bytes, trying pieces of ${_size ~/ 1024} KiB');
++        size = max(_minSize, span ~/ 2);
++        debugPrint('chunked source: 403 for $span bytes, trying ${size ~/ 1024} KiB');
+       }
+     }
+   }
+diff --git a/lib/services/download_service.dart b/lib/services/download_service.dart
+index 19770d2..6f25dc3 100644
+--- a/lib/services/download_service.dart
++++ b/lib/services/download_service.dart
+@@ -369,7 +369,7 @@ class DownloadService {
+       final label = AudioUrlResolver.strategyLabel(idx);
+       ResolvedAudioUrl r;
+       try {
+-        r = await AudioUrlResolver().resolve(t.id, strategyIndex: idx);
++        r = await AudioUrlResolver().resolve(t.id, strategyIndex: idx, background: true);
+       } catch (e) {
+         errors.add('$label: $e');
+         if (e is TimeoutException) break;
+diff --git a/lib/services/yt_dlp_update_service.dart b/lib/services/yt_dlp_update_service.dart
+index 7407105..88af8fa 100644
+--- a/lib/services/yt_dlp_update_service.dart
++++ b/lib/services/yt_dlp_update_service.dart
+@@ -34,6 +34,7 @@ class YtDlpUpdateService {
+           final result = await YoutubeDLFlutter.instance.updateYoutubeDL();
+           if (result.status == OperationStatus.success) {
+             await prefs.setInt(_lastUpdateKey, now);
++            await AudioUrlResolver.rememberVersion(result.version);
+             debugPrint('yt-dlp updated, version: ${result.version}');
+           } else {
+             debugPrint('yt-dlp update failed: ${result.errorMessage}');

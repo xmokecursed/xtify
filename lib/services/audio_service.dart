@@ -129,6 +129,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   // ---------------- self-healing ----------------
   Timer? _watchdogTimer;
   bool _recovering = false;
+  bool _gaveUp = false; // recovery stopped after repeated failures: wait for the user
   int _recoveryStreak = 0;
   DateTime _lastRecovery = DateTime.fromMillisecondsSinceEpoch(0);
   Duration _wdPos = Duration.zero;
@@ -143,7 +144,13 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     _recoveryStreak = now.difference(_lastRecovery) < const Duration(seconds: 30)
         ? _recoveryStreak + 1
         : 0;
-    if (!force && _recoveryStreak >= 3) return;
+    if (!force && _recoveryStreak >= 3) {
+      // say it once, and let the watchdog stay quiet until the user presses play
+      if (!_gaveUp) debugPrint('recovery: giving up after $_recoveryStreak quick failures, press play to retry');
+      _gaveUp = true;
+      return;
+    }
+    _gaveUp = false;
     _recovering = true;
     _lastRecovery = now;
     final pos = at ?? _player.position;
@@ -161,7 +168,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Every 4 s: if audio should be playing but is stuck (frozen or buffering far too long), reload it.
   void _watchdog() {
     final now = DateTime.now();
-    if (!_sourceLoaded || _recovering || _settingSource || _currentTrack == null) {
+    if (!_sourceLoaded || _recovering || _settingSource || _gaveUp || _currentTrack == null) {
       _wdAt = now;
       return;
     }
@@ -414,6 +421,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> playTrack(Track track,
       {bool userInitiated = true, bool keepContext = false, Duration? startAt}) async {
     final token = ++_playToken;
+    _gaveUp = false; // a new attempt: the watchdog may watch again
     // a queued song that was loaded as "next" goes back to the front of the queue
     if (_preloaded != null && _preloadedFromUser) _userQueue = [_preloaded!, ..._userQueue];
     _preloaded = null;
@@ -857,16 +865,16 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     for (var i = 0; i < 80 && AudioUrlResolver.isBusy; i++) {
       await Future.delayed(const Duration(milliseconds: 500));
     }
-    final n = AudioUrlResolver.strategyCount;    
-    for (var k = 0; k < 2; k++) {      
-      final idx = (AudioUrlResolver.preferredStrategy + k) % n;      
-      try {        
-        return await AudioUrlResolver().resolve(videoId, strategyIndex: idx);      
-      } catch (e) {        
-        debugPrint('queue resolve failed (${AudioUrlResolver.strategyLabel(idx)}): ${_short(e)}');      
-      }    }    
-    return null;  
-  }  
+    // one try with the usual strategy: if it fails, the next attempt picks another candidate
+    // (a second run of the same client only holds up the song the user may tap meanwhile)
+    final idx = AudioUrlResolver.preferredStrategy % AudioUrlResolver.strategyCount;
+    try {
+      return await AudioUrlResolver().resolve(videoId, strategyIndex: idx, background: true);
+    } catch (e) {
+      debugPrint('queue resolve failed (${AudioUrlResolver.strategyLabel(idx)}): ${_short(e)}');
+    }
+    return null;
+  }
 
   /// The player moved on to the pre-loaded song by itself.  
   void _onIndexChanged(int? index) {    
