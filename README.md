@@ -123,7 +123,7 @@ Phone (Xtify app) ──search / recommendations──▶ Xtify server ──▶
         └──audio link (your Google cookies, on the phone only)──▶ YouTube
 ```
 
-- The app is written in Flutter. A yt-dlp runtime inside the app finds the audio stream for each song.
+- The app is written in Flutter. It asks YouTube for each song's audio link directly, which takes a fraction of a second. If that ever fails, a yt-dlp runtime inside the app finds the link instead (slower, several seconds a song).
 - Recommendations come from Last.fm and YouTube Music's "up next" data.
 - Playback uses `just_audio` and `audio_service`, which gives lock-screen controls and background play.
 

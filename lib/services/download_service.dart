@@ -339,8 +339,11 @@ class DownloadService {
 
   Future<void> _download(Track t) async {
     final dir = await _dir();
-    // a song the user is playing right now goes first
-    for (var i = 0; i < 60 && AudioUrlResolver.isBusy; i++) {
+    // a song the user is playing right now goes first (only matters for yt-dlp, which looks up
+    // one song at a time; the direct lookup does not queue behind anything)
+    for (var i = 0;
+        i < 60 && AudioUrlResolver.isBusy && !AudioUrlResolver.canLookUpDirectly(t.id);
+        i++) {
       await Future.delayed(const Duration(milliseconds: 500));
     }
     final errors = <String>[];
@@ -363,9 +366,8 @@ class DownloadService {
       path = await attempt(cached, 'cached');
       if (path == null) AudioUrlResolver.clearCache(t.id);
     }
-    final n = AudioUrlResolver.strategyCount;
-    for (var k = 0; path == null && k < n; k++) {
-      final idx = (AudioUrlResolver.preferredStrategy + k) % n;
+    for (final idx in AudioUrlResolver.attemptOrder(t.id)) {
+      if (path != null) break;
       final label = AudioUrlResolver.strategyLabel(idx);
       ResolvedAudioUrl r;
       try {
@@ -408,19 +410,28 @@ class DownloadService {
     final client = http.Client();
     RandomAccessFile? raf;
     var lastShown = 0.0;
+    final clock = Stopwatch()..start();
+    var lastShownAtMs = -1000;
     try {
       raf = await part.open(mode: FileMode.write);
       int? total = int.tryParse(uri.queryParameters['clen'] ?? '');
       var pos = 0;
+      // Every update rebuilds each download button, the banner and the queue,
+      // and bytes arrive in small blocks, so on a fast connection that was
+      // hundreds of rebuilds a second. At most ~5 a second is plenty for a
+      // progress bar that glides between values anyway.
       void report(int at) {
         final tot = total;
         if (tot == null || tot <= 0) return;
         final p = (at / tot).clamp(0.0, 1.0);
-        if (p - lastShown >= 0.005) {
-          lastShown = p;
-          final cur = tasks.value[t.id];
-          if (cur != null) _setTask(t.id, cur.copy(progress: p));
-        }
+        if (p <= lastShown) return;
+        final due = p >= 1.0 ||
+            (p - lastShown >= 0.01 && clock.elapsedMilliseconds - lastShownAtMs >= 200);
+        if (!due) return;
+        lastShown = p;
+        lastShownAtMs = clock.elapsedMilliseconds;
+        final cur = tasks.value[t.id];
+        if (cur != null) _setTask(t.id, cur.copy(progress: p));
       }
 
       while (true) {
