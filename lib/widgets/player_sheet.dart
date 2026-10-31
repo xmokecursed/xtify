@@ -19,6 +19,8 @@ import 'package:rxdart/rxdart.dart';
 
 const double _collapsedFraction = 0.11;
 const double _expandedFraction = 0.70;
+// _collapsedFraction as a percentage, to split the height by flex (see build)
+const int _collapsedPercent = 11;
 
 class PlayerSheet extends StatefulWidget {
   const PlayerSheet({super.key});
@@ -31,6 +33,12 @@ class _PlayerSheetState extends State<PlayerSheet> {
   // How far the sheet is pulled up; the download banner hides when it is open.
   final ValueNotifier<double> _extent = ValueNotifier<double>(_collapsedFraction);
   final DraggableScrollableController _ctl = DraggableScrollableController();
+
+  // One position stream for both progress displays, made once. Asking
+  // AudioService.position again on every rebuild can hand out a new stream each
+  // time, which means re-subscribing (and restarting its timer) whenever the
+  // sheet rebuilds.
+  late final Stream<Duration> _position = AudioService.position;
 
   @override
   void dispose() {
@@ -50,41 +58,54 @@ class _PlayerSheetState extends State<PlayerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final collapsed =
-            c.maxHeight.isFinite ? c.maxHeight * _collapsedFraction : 90.0;
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            NotificationListener<DraggableScrollableNotification>(
-              onNotification: (n) {
-                _extent.value = n.extent;
-                return false;
-              },
-              child: _sheet(context),
-            ),
-            // Download progress card, floating just above the collapsed mini player
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: collapsed + 8,
-              child: ValueListenableBuilder<double>(
-                valueListenable: _extent,
-                builder: (_, e, child) => IgnorePointer(
-                  ignoring: e > 0.2,
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 200),
-                    opacity: e > 0.2 ? 0 : 1,
-                    child: child,
-                  ),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        NotificationListener<DraggableScrollableNotification>(
+          onNotification: (n) {
+            _extent.value = n.extent;
+            return false;
+          },
+          child: _sheet(context),
+        ),
+        // Download progress card, floating just above the collapsed mini player.
+        // The collapsed sheet is _collapsedFraction of the height, so splitting
+        // the height in those proportions puts the card right on top of it.
+        // (This used to measure the height with a LayoutBuilder. That made the
+        // whole player rebuild during layout, and when anything inside such a
+        // builder throws, everything under it stays broken.)
+        Positioned.fill(
+          child: Column(
+            children: [
+              Expanded(
+                flex: 100 - _collapsedPercent,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      child: ValueListenableBuilder<double>(
+                        valueListenable: _extent,
+                        builder: (_, e, child) => IgnorePointer(
+                          ignoring: e > 0.2,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 200),
+                            opacity: e > 0.2 ? 0 : 1,
+                            child: child,
+                          ),
+                        ),
+                        child: const DownloadBanner(),
+                      ),
+                    ),
+                  ],
                 ),
-                child: const DownloadBanner(),
               ),
-            ),
-          ],
-        );
-      },
+              const Spacer(flex: _collapsedPercent),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -192,20 +213,18 @@ class _PlayerSheetState extends State<PlayerSheet> {
       );
     }
 
-    // Signed in: current track or "Nothing playing"
-    return StreamBuilder<List<dynamic>>(
-      stream: Rx.combineLatest2<PlaybackState, MediaItem?, List<dynamic>>(
-        XtifyAudioHandler.instance.playbackState,
-        XtifyAudioHandler.instance.mediaItem,
-        (PlaybackState playbackState, MediaItem? mediaItem) => [playbackState, mediaItem],
-      ),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const SizedBox.shrink();
-        }
-        final PlaybackState playbackState = snapshot.data![0] as PlaybackState;
-        final MediaItem? mediaItem = snapshot.data![1] as MediaItem?;
-
+    // Signed in: current track or "Nothing playing".
+    // Two plain StreamBuilders on the handler's own streams. This used to build
+    // a fresh Rx.combineLatest2(...) inside build(): that stream can only be
+    // listened to once, and the sheet's ListView re-creates a child from the
+    // same widget when it was dropped, so the second listen threw "Stream has
+    // already been listened to".
+    final h = XtifyAudioHandler.instance;
+    return StreamBuilder<MediaItem?>(
+      stream: h.mediaItem,
+      initialData: h.mediaItem.valueOrNull,
+      builder: (context, itemSnap) {
+        final mediaItem = itemSnap.data;
         if (mediaItem == null) {
           return const Padding(
             padding: EdgeInsets.symmetric(horizontal: AppSpacing.screen, vertical: 14),
@@ -266,11 +285,18 @@ class _PlayerSheetState extends State<PlayerSheet> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    _PlayPauseButton(playing: playbackState.playing, size: 40),
+                    StreamBuilder<PlaybackState>(
+                      stream: h.playbackState,
+                      initialData: h.playbackState.valueOrNull,
+                      builder: (context, stateSnap) => _PlayPauseButton(
+                        playing: stateSnap.data?.playing ?? false,
+                        size: 40,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
-                _MiniProgress(duration: mediaItem.duration),
+                _MiniProgress(duration: mediaItem.duration, position: _position),
               ],
             ),
           ),
@@ -291,33 +317,37 @@ class _PlayerSheetState extends State<PlayerSheet> {
             builder: (context, snapshot) {
               final mediaItem = snapshot.data;
               final url = mediaItem?.artUri?.toString() ?? '';
-              return LayoutBuilder(builder: (context, box) {
-                final side = math.min(box.maxWidth, 300.0);
-                return AnimatedSwitcher(
-                  duration: AppMotion.medium,
-                  switchInCurve: AppMotion.curve,
-                  child: Container(
-                    key: ValueKey(url),
-                    width: side,
-                    height: side,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(AppRadius.card + 4),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          blurRadius: 30,
-                          offset: const Offset(0, 14),
-                        ),
-                      ],
-                    ),
-                    child: ArtImage(
-                      url: url,
-                      size: side,
-                      radius: AppRadius.card + 4,
-                    ),
+              // As wide as the screen allows inside the side padding, up to
+              // 300. Read from MediaQuery instead of a LayoutBuilder so this
+              // is built with the rest of the sheet, not during layout.
+              final side = math.max(
+                  0.0,
+                  math.min(MediaQuery.sizeOf(context).width - 2 * AppSpacing.screen,
+                      300.0));
+              return AnimatedSwitcher(
+                duration: AppMotion.medium,
+                switchInCurve: AppMotion.curve,
+                child: Container(
+                  key: ValueKey(url),
+                  width: side,
+                  height: side,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppRadius.card + 4),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        blurRadius: 30,
+                        offset: const Offset(0, 14),
+                      ),
+                    ],
                   ),
-                );
-              });
+                  child: ArtImage(
+                    url: url,
+                    size: side,
+                    radius: AppRadius.card + 4,
+                  ),
+                ),
+              );
             },
           ),
           const SizedBox(height: 24),
@@ -361,7 +391,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
           const SizedBox(height: 16),
           // Progress bar
           StreamBuilder<Duration>(
-            stream: AudioService.position,
+            stream: _position,
             builder: (context, positionSnapshot) {
               final position = positionSnapshot.data ?? Duration.zero;
               return StreamBuilder<MediaItem?>(
@@ -557,13 +587,14 @@ class _PlayPauseButton extends StatelessWidget {
 /// Thin progress line under the mini player.
 class _MiniProgress extends StatelessWidget {
   final Duration? duration;
-  const _MiniProgress({required this.duration});
+  final Stream<Duration> position;
+  const _MiniProgress({required this.duration, required this.position});
 
   @override
   Widget build(BuildContext context) {
     final total = duration?.inMilliseconds ?? 0;
     return StreamBuilder<Duration>(
-      stream: AudioService.position,
+      stream: position,
       builder: (context, snap) {
         final pos = snap.data?.inMilliseconds ?? 0;
         final v = total <= 0 ? 0.0 : (pos / total).clamp(0.0, 1.0);

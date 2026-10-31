@@ -23,9 +23,24 @@ class DebugLog {
       original(message == null ? null : _color(message), wrapWidth: wrapWidth);
     };
     final previousOnError = FlutterError.onError;
+    // Flutter prints a full report only for the very first error of a run and a
+    // one-line summary for every later one, which is exactly how the details of
+    // the error that mattered got lost. So the first error of each KIND is
+    // printed in full (and kept in full in the copied debug info); repeats of
+    // the same kind stay one line.
+    final seen = <String>{};
     FlutterError.onError = (details) {
-      add('FLUTTER ERROR: ${details.exceptionAsString()}\n${_trim(details.stack)}');
-      previousOnError?.call(details);
+      final first = seen.add(_kindOf(details));
+      if (first) {
+        add('FLUTTER ERROR (first of its kind): ${details.exceptionAsString()}');
+        for (final line in details.toString().split('\n').take(45)) {
+          if (line.trim().isNotEmpty) add('  $line');
+        }
+        FlutterError.dumpErrorToConsole(details, forceReport: true);
+      } else {
+        add('FLUTTER ERROR: ${details.exceptionAsString()}');
+        previousOnError?.call(details);
+      }
     };
     PlatformDispatcher.instance.onError = (error, stack) {
       add('UNCAUGHT: $error\n${_trim(stack)}');
@@ -69,6 +84,13 @@ class DebugLog {
 
   static String _trim(StackTrace? s) =>
       (s?.toString() ?? '').split('\n').take(8).join('\n');
+
+  /// Errors that only differ in numbers (sizes, animation values, line numbers)
+  /// count as the same kind.
+  static String _kindOf(FlutterErrorDetails d) {
+    final firstLine = d.exceptionAsString().split('\n').first;
+    return '${d.library}|${firstLine.replaceAll(RegExp(r'[0-9][0-9.,e+-]*'), '#')}';
+  }
 
   static void add(String message) {
     final t = DateTime.now().toIso8601String().substring(11, 19);

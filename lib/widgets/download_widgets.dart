@@ -78,9 +78,16 @@ class DownloadButton extends StatelessWidget {
             duration: const Duration(milliseconds: 350),
             switchInCurve: Curves.elasticOut,
             switchOutCurve: Curves.easeIn,
+            // elasticOut swings past 1.0. Scale handles that, and the framework
+            // clamps opacity itself, so the animation goes straight into both.
+            // It must NOT go through a CurveTween: Curve.transform asserts on
+            // values outside 0..1, and since the switcher rebuilds this
+            // transition on every download progress tick, that assertion fired
+            // in the middle of a rebuild and left broken widgets behind (the
+            // red error boxes, then "wrong build scope" for the whole sheet).
             transitionBuilder: (child, anim) => ScaleTransition(
               scale: anim,
-              child: FadeTransition(opacity: anim.drive(CurveTween(curve: Curves.easeOut)), child: child),
+              child: FadeTransition(opacity: anim, child: child),
             ),
             child: icon,
           ),
@@ -90,9 +97,13 @@ class DownloadButton extends StatelessWidget {
   }
 }
 
-/// null = not started yet (spins), otherwise 0..1.
-double? _progressOf(DownloadTask t) =>
-    (t.status == DownloadStatus.active && t.progress > 0) ? t.progress : null;
+/// null = not started yet (spins), otherwise 0..1 (never NaN or past 1).
+double? _progressOf(DownloadTask t) {
+  if (t.status != DownloadStatus.active) return null;
+  final p = t.progress;
+  if (!p.isFinite || p <= 0) return null;
+  return p > 1 ? 1.0 : p;
+}
 
 /// Circular progress that glides between values, with a stop square inside.
 class _ProgressRing extends StatelessWidget {
@@ -161,18 +172,20 @@ class _SmoothBar extends StatelessWidget {
                 tween: Tween<double>(end: value),
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeOut,
+                // The track fills the whole bar (StackFit.expand) and the fill
+                // gets a definite height, so both are always visible. Before,
+                // the stack was only as wide as the fill and the fill had no
+                // height at all.
                 builder: (_, v, _) => Stack(
+                  fit: StackFit.expand,
                   children: [
-                    const Positioned.fill(child: ColoredBox(color: Colors.white12)),
-                    FractionallySizedBox(
+                    const ColoredBox(color: Colors.white12),
+                    Align(
                       alignment: Alignment.centerLeft,
-                      widthFactor: v.clamp(0.02, 1.0),
-                      child: const DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Color(0xFF1DE9B6), Color(0xFF69F0AE)],
-                          ),
-                        ),
+                      child: FractionallySizedBox(
+                        widthFactor: v.clamp(0.02, 1.0),
+                        heightFactor: 1,
+                        child: const ColoredBox(color: Colors.white),
                       ),
                     ),
                   ],

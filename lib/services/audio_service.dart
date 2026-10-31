@@ -488,10 +488,9 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       if (token != _playToken) return;
     }
 
-    final n = AudioUrlResolver.strategyCount;
-    for (var k = 0; k < n; k++) {
+    // the direct lookup first (while it works), then yt-dlp, the way that worked last first
+    for (final idx in AudioUrlResolver.attemptOrder(videoId)) {
       if (token != _playToken) return;
-      final idx = (AudioUrlResolver.preferredStrategy + k) % n;
       final label = AudioUrlResolver.strategyLabel(idx);
       try {
         final resolved =
@@ -861,6 +860,15 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     if (local != null) return local;
     final cached = AudioUrlResolver.cached(videoId);    
     if (cached != null) return cached;    
+    // The direct lookup needs no yt-dlp, so it neither waits for it nor holds it up.
+    if (AudioUrlResolver.canLookUpDirectly(videoId)) {
+      try {
+        return await AudioUrlResolver().resolve(videoId,
+            strategyIndex: AudioUrlResolver.nativeIndex, background: true);
+      } catch (e) {
+        debugPrint('queue resolve failed (native): ${_short(e)}');
+      }
+    }
     // let a song the user is waiting for go first
     for (var i = 0; i < 80 && AudioUrlResolver.isBusy; i++) {
       await Future.delayed(const Duration(milliseconds: 500));

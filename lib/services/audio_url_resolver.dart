@@ -4,21 +4,26 @@ import 'package:extractor/extractor.dart';
 import 'package:flutter/foundation.dart';
 import '../services/cookie_service.dart';
 import 'chunked_audio_source.dart' show linkProblem;
+import 'connectivity_service.dart';
 import 'cookie_refresh_service.dart';
+import 'innertube_client.dart';
 import '../utils/cache_util.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ResolvedAudioUrl {
   final String url;
   final Map<String, String> headers;
-  ResolvedAudioUrl({required this.url, required this.headers});
+  /// Which strategy found it (an index into the resolver's list), when known.
+  final int? strategy;
+  ResolvedAudioUrl({required this.url, required this.headers, this.strategy});
 }
 
 class _Strategy {
   final String label;
   final String? client; // yt-dlp youtube player_client
   final bool cookies;
-  const _Strategy(this.label, this.client, this.cookies);
+  final bool native; // asks YouTube directly, no yt-dlp
+  const _Strategy(this.label, this.client, this.cookies, {this.native = false});
 }
 
 class AudioUrlResolver {
@@ -26,8 +31,12 @@ class AudioUrlResolver {
   static final CacheUtil _cacheUtil = CacheUtil();
   static Future<void>? _initFuture;
 
-  // Tried in order, starting with the one that last worked.
+  // Tried in order: the direct lookup first (see [attemptOrder]), then the yt-dlp one that
+  // worked last, then the rest.
   static const List<_Strategy> _strategies = [
+    // One request to YouTube's player API, no yt-dlp: a few hundred milliseconds instead of
+    // the 6-8 seconds yt-dlp needs on a phone. Same client as the "visionos" one below.
+    _Strategy('native', null, false, native: true),
     // "visionos" is what yt-dlp itself picks on a phone, where there is no JavaScript
     // runtime: it needs no PO token and no player script, so it is quick and its links play to
     // the end. The android_vr and ios clients used here before are gone on purpose: YouTube
@@ -40,7 +49,26 @@ class AudioUrlResolver {
     _Strategy('mweb+cookies', 'mweb', true),
   ];
 
-  static int preferredStrategy = 0;
+  static const int nativeIndex = 0;
+
+  /// The yt-dlp strategy that worked last (never the direct lookup, which always goes first
+  /// while it is healthy).
+  static int preferredStrategy = 1;
+
+  /// Whether the direct lookup is worth trying for [videoId] right now.
+  static bool canLookUpDirectly(String videoId) => InnertubeClient.canTry(videoId);
+
+  /// The strategies to try for a song, in order.
+  static List<int> attemptOrder(String videoId) {
+    final order = <int>[];
+    if (canLookUpDirectly(videoId)) order.add(nativeIndex);
+    for (var k = 0; k < _strategies.length; k++) {
+      final i = (preferredStrategy + k) % _strategies.length;
+      if (i != nativeIndex) order.add(i);
+    }
+    return order;
+  }
+
   // The first run pays for loading yt-dlp, later ones are quicker: a stuck run is cut off
   // after 20 s so the next strategy starts (the first one gets 45 s).
   static bool _warm = false;
@@ -59,12 +87,15 @@ class AudioUrlResolver {
   static int get strategyCount => _strategies.length;
   static String strategyLabel(int i) => _strategies[i].label;
 
-  static const String _prefKey = 'preferred_strategy_v4';
+  // v5: the strategy list got the direct lookup at index 0, so older saved indexes mean
+  // something else
+  static const String _prefKey = 'preferred_strategy_v5';
 
   static Future<void> loadPreferred() async {
     final prefs = await SharedPreferences.getInstance();
-    final v = prefs.getInt(_prefKey) ?? 0;
-    if (v >= 0 && v < _strategies.length) preferredStrategy = v;
+    final v = prefs.getInt(_prefKey) ?? 1;
+    if (v > nativeIndex && v < _strategies.length) preferredStrategy = v;
+    await InnertubeClient.load();
   }
 
   static Future<void> ensureInitialized() => _initFuture ??= _init();
@@ -168,10 +199,17 @@ class AudioUrlResolver {
 
   /// Call only after the URL actually played.
   static void markWorking(String videoId, int strategyIndex, ResolvedAudioUrl r) {
-    // a cookie strategy that rescued one song does not become the first choice for the next
-    if (!_strategies[strategyIndex].cookies) {
-      preferredStrategy = strategyIndex;
-      SharedPreferences.getInstance().then((p) => p.setInt(_prefKey, strategyIndex));
+    // the strategy that really found the link, when the link knows it (a prefetched or queued
+    // one was not found by whatever is "preferred" now)
+    final found = r.strategy ?? strategyIndex;
+    if (found >= 0 && found < _strategies.length) {
+      final s = _strategies[found];
+      // a cookie strategy that rescued one song does not become the first choice for the next,
+      // and the direct lookup always goes first anyway
+      if (!s.cookies && !s.native) {
+        preferredStrategy = found;
+        SharedPreferences.getInstance().then((p) => p.setInt(_prefKey, found));
+      }
     }
     _cacheUtil.put(videoId, {
       'url': r.url,
@@ -185,21 +223,44 @@ class AudioUrlResolver {
   // Resolved ahead of the tap. Not trusted until a player actually opens it.
   static final Map<String, Future<ResolvedAudioUrl>> _inflight = {};
   static final Map<String, ResolvedAudioUrl> _prefetched = {};
+  static final Map<String, DateTime> _prefetchedAt = {};
+  static const Duration _prefetchLife = Duration(minutes: 20);
 
   /// Start resolving in the background so the tap is fast. Safe to call repeatedly.
+  /// The direct lookup can run for several songs at once; yt-dlp is one at a time, so it
+  /// never starts one here while another lookup is running (a song the user taps meanwhile
+  /// would wait for it).
   static void prefetch(String videoId) {
     if (_prefetched.containsKey(videoId) || _inflight.containsKey(videoId)) return;
     if (cached(videoId) != null) return;
-    if (isBusy) return; // never compete with a song the user is waiting for
-    final f = AudioUrlResolver()
-        .resolve(videoId, strategyIndex: preferredStrategy, background: true);
+    final direct = canLookUpDirectly(videoId);
+    if (!direct && (isBusy || _inflight.isNotEmpty)) return;
+    final f = AudioUrlResolver().resolve(videoId,
+        strategyIndex: direct ? nativeIndex : preferredStrategy, background: true);
     _inflight[videoId] = f;
-    f
-        .then((r) => _prefetched[videoId] = r)
-        .catchError((Object e) {
-          debugPrint('prefetch failed for $videoId: $e');
-        })
-        .whenComplete(() => _inflight.remove(videoId));
+    unawaited(f.then<void>((r) {
+      _prefetched[videoId] = r;
+      _prefetchedAt[videoId] = DateTime.now();
+      _trimPrefetched();
+    }, onError: (Object e) {
+      debugPrint('prefetch failed for $videoId: $e');
+    }).whenComplete(() {
+      _inflight.remove(videoId);
+    }));
+  }
+
+  static void _trimPrefetched() {
+    final now = DateTime.now();
+    _prefetchedAt.removeWhere((id, at) {
+      final old = now.difference(at) > _prefetchLife;
+      if (old) _prefetched.remove(id);
+      return old;
+    });
+    while (_prefetched.length > 40) {
+      final id = _prefetched.keys.first;
+      _prefetched.remove(id);
+      _prefetchedAt.remove(id);
+    }
   }
 
   /// A prefetched URL, waiting for an in-flight one if needed. Null if none.
@@ -209,12 +270,18 @@ class AudioUrlResolver {
       try {
         final r = await inflight;
         _prefetched.remove(videoId);
+        _prefetchedAt.remove(videoId);
         return r;
       } catch (_) {
         return null;
       }
     }
-    return _prefetched.remove(videoId);
+    final at = _prefetchedAt.remove(videoId);
+    final r = _prefetched.remove(videoId);
+    if (r == null) return null;
+    // a link that was found a while ago may have gone stale: look it up again
+    if (at != null && DateTime.now().difference(at) > _prefetchLife) return null;
+    return r;
   }
 
   static int _expirySeconds(String url) {
@@ -226,20 +293,24 @@ class AudioUrlResolver {
 
   // ---------------- resolving ----------------
 
-  /// Looks the song up with yt-dlp using strategy [strategyIndex]. [background] = nobody is
-  /// waiting for it (prefetch, the next song, a download): a song the user is waiting for
-  /// goes first.
+  /// Looks the song up with strategy [strategyIndex]: the direct lookup, or yt-dlp with one of
+  /// its clients. [background] = nobody is waiting for it (prefetch, the next song, a
+  /// download): a song the user is waiting for goes first on yt-dlp's single lane.
   Future<ResolvedAudioUrl> resolve(String videoId,
       {required int strategyIndex, bool background = false}) async {
     if (!RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(videoId)) {
       throw Exception('Invalid YouTube video ID');
     }
+    final s = _strategies[strategyIndex];
+    // The direct lookup does not touch yt-dlp at all, so it does not wait for yt-dlp to start
+    // or to update either.
+    if (s.native) return _resolveDirect(videoId, strategyIndex);
+
     await ensureInitialized();
     // a new enough yt-dlp first (only the very first song after an install waits for this)
     await ensureModern().timeout(const Duration(seconds: 45),
         onTimeout: () => debugPrint('yt-dlp update is taking long, going on without it'));
 
-    final s = _strategies[strategyIndex];
     final options = <String, String>{
       // fail fast on a dead connection instead of waiting on yt-dlp's long defaults
       '--socket-timeout': '10',
@@ -288,7 +359,26 @@ class AudioUrlResolver {
       debugPrint('[$videoId] ${s.label}: link refused, $bad');
       throw Exception('YouTube refuses this link ($bad)');
     }
-    return ResolvedAudioUrl(url: audioUrl, headers: headers);
+    return ResolvedAudioUrl(url: audioUrl, headers: headers, strategy: strategyIndex);
+  }
+
+  /// The direct lookup: one request to YouTube's player API (see [InnertubeClient]).
+  static Future<ResolvedAudioUrl> _resolveDirect(String videoId, int strategyIndex) async {
+    final sw = Stopwatch()..start();
+    // offline: a failure says nothing about the lookup, so it must not switch it off
+    final online = ConnectivityService.instance.online.value;
+    final found = await InnertubeClient.audioFor(videoId, countFailures: online);
+    final lookupMs = sw.elapsedMilliseconds;
+    // same check the yt-dlp links get: YouTube cuts some links off or refuses them
+    final bad = await linkProblem(found.url, headers: const {});
+    if (bad != null) {
+      debugPrint('[$videoId] native: link refused, $bad');
+      if (online) InnertubeClient.noteBadLink(bad);
+      throw Exception('YouTube refuses this link ($bad)');
+    }
+    debugPrint('[$videoId] native: audio url from ${Uri.tryParse(found.url)?.host ?? '?'} '
+        '(${found.description}) took ${lookupMs}ms + ${sw.elapsedMilliseconds - lookupMs}ms link check');
+    return ResolvedAudioUrl(url: found.url, headers: const {}, strategy: strategyIndex);
   }
 
   /// One yt-dlp lookup. Only one runs at a time (see [_running]); the time limit counts from
