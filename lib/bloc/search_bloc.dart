@@ -42,9 +42,12 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
         hasMore: tracks.isNotEmpty,
       ));
       // Look up the first few ahead of the tap. The direct lookup is cheap and runs in
-      // parallel; with yt-dlp only the first one actually starts (one lookup at a time).
+      // parallel; with yt-dlp only the first one actually starts (one lookup at a time), and
+      // the first one also falls back to yt-dlp when the direct lookup does not work out.
+      var first = true;
       for (final t in tracks.where((t) => t.isPlayable).take(3)) {
-        AudioUrlResolver.prefetch(t.id);
+        AudioUrlResolver.prefetch(t.id, ytDlpFallback: first);
+        first = false;
       }
     } catch (e) {
       emit(SearchFailure(message: e.toString()));

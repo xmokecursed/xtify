@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 /// One audio stream of a video, found by [InnertubeClient].
 class InnertubeAudio {
@@ -12,14 +11,29 @@ class InnertubeAudio {
 }
 
 /// The direct lookup failed. [videoSpecific] means YouTube says something about THIS video
-/// (private, age restricted, ...) rather than about the lookup itself.
+/// (private, age restricted, ...) rather than about the lookup itself. [botCheck] means it took
+/// the visitor for a bot ("Sign in to confirm you're not a bot").
 class InnertubeException implements Exception {
   final String message;
   final bool videoSpecific;
-  const InnertubeException(this.message, {this.videoSpecific = false});
+  final bool botCheck;
+  const InnertubeException(this.message, {this.videoSpecific = false, this.botCheck = false});
 
   @override
   String toString() => message;
+}
+
+/// What YouTube gets to recognise a visitor by: the id and the cookies a page load hands out.
+class _Session {
+  final String visitorData;
+  final Map<String, String> cookies;
+  final String page; // the video whose watch page this was made from
+  final DateTime _made = DateTime.now();
+  _Session(this.visitorData, this.cookies, this.page);
+
+  Duration get age => DateTime.now().difference(_made);
+
+  String get cookieHeader => cookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
 }
 
 /// Asks YouTube's own player API for a song's audio link: one request, no yt-dlp.
@@ -30,6 +44,11 @@ class InnertubeException implements Exception {
 /// runtime, needs no PO token and no player script, and its links play to the end), and reads
 /// the answer the way yt-dlp does. Several lookups can run at once, since nothing here is
 /// shared with yt-dlp's one-at-a-time lane.
+///
+/// What it must also do is what yt-dlp does first: load a YouTube page once, keep the visitor
+/// id and the cookies that come with it, and send them along with every request. A request
+/// from a visitor YouTube has never seen is answered with "Sign in to confirm you're not a
+/// bot" (that is what the first version of this got on a phone where yt-dlp worked).
 ///
 /// It is the fast path, not the only one: when it fails the resolver falls back to yt-dlp, and
 /// after repeated failures it is switched off for a while ([healthy]) so a changed API costs
@@ -47,32 +66,149 @@ class InnertubeClient {
   static final Uri _endpoint =
       Uri.parse('https://www.youtube.com/youtubei/v1/player?prettyPrint=false');
 
+  // What yt-dlp adds to every request it makes (its std_headers), and the browser it loads the
+  // watch page as.
+  static const String _accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+  static const String _acceptLanguage = 'en-us,en;q=0.5';
+  static const String _pageUserAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+      'Chrome/149.0.0.0 Safari/537.36';
+
   // One client for all lookups, so the connection to YouTube stays open between them.
   static HttpClient? _httpClient;
   static HttpClient get _http => _httpClient ??= HttpClient()
     ..connectionTimeout = const Duration(seconds: 5)
     ..idleTimeout = const Duration(seconds: 60);
 
-  // ---------------- visitor id ----------------
+  // ---------------- session ----------------
 
-  // YouTube hands out an id with every answer; sending it back on the next request is what a
-  // browser does. Kept between runs.
-  static const String _visitorKey = 'innertube_visitor_v1';
-  static String? _visitorData;
+  static const Duration _sessionLife = Duration(hours: 2);
+  // a page to start the session from when no song is at hand ("Me at the zoo")
+  static const String _warmUpVideo = 'jNQXAC9IVRw';
+  // the visitor id sits in the first lines of the page's config; this is only a safety stop
+  static const int _pageLimit = 2 * 1024 * 1024;
+  static final RegExp _visitorRe = RegExp(r'"(?:VISITOR_DATA|visitorData)"\s*:\s*"([^"\\]+)"');
 
-  static Future<void> load() async {
+  static _Session? _session;
+  static Future<_Session>? _starting;
+
+  /// Starts the session ahead of the first song, so the first lookup does not wait for it.
+  /// Never throws.
+  static Future<void> warmUp() async {
     try {
-      final p = await SharedPreferences.getInstance();
-      _visitorData = p.getString(_visitorKey);
-    } catch (_) {}
+      await _sessionFor();
+    } catch (e) {
+      debugPrint('direct lookup: could not start a session ahead of time: $e');
+    }
   }
 
-  static void _rememberVisitor(String? v) {
-    if (v == null || v.isEmpty || v == _visitorData) return;
-    _visitorData = v;
-    unawaited(SharedPreferences.getInstance().then<void>((p) async {
-      await p.setString(_visitorKey, v);
-    }, onError: (Object _) {}));
+  static Future<_Session> _sessionFor({String? videoId}) async {
+    final s = _session;
+    if (s != null && s.age < _sessionLife) return s;
+    final running = _starting;
+    if (running != null) return running;
+    final started = _startSession(videoId);
+    _starting = started;
+    try {
+      final made = await started;
+      _session = made;
+      return made;
+    } finally {
+      if (identical(_starting, started)) _starting = null;
+    }
+  }
+
+  static void _dropSession(_Session s) {
+    if (identical(_session, s)) _session = null;
+  }
+
+  static Future<_Session> _startSession(String? videoId) async {
+    final id = (videoId != null && RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(videoId))
+        ? videoId
+        : _warmUpVideo;
+    try {
+      return await _loadPage(id).timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      throw const InnertubeException('YouTube page: no answer in 10s');
+    }
+  }
+
+  /// Loads the watch page the way yt-dlp does and takes the visitor id and the cookies from it.
+  static Future<_Session> _loadPage(String id) async {
+    final sw = Stopwatch()..start();
+    // yt-dlp starts every run with these two (language and "cookies accepted")
+    final jar = <String, String>{'PREF': 'hl=en&tz=UTC', 'SOCS': 'CAI'};
+    final req = await _http
+        .getUrl(Uri.parse('https://www.youtube.com/watch?v=$id&bpctr=9999999999&has_verified=1'));
+    req.headers
+      ..set(HttpHeaders.userAgentHeader, _pageUserAgent)
+      ..set(HttpHeaders.acceptHeader, _accept)
+      ..set(HttpHeaders.acceptLanguageHeader, _acceptLanguage)
+      ..set('Sec-Fetch-Mode', 'navigate')
+      ..set(HttpHeaders.cookieHeader, jar.entries.map((e) => '${e.key}=${e.value}').join('; '));
+    final res = await req.close();
+    if (res.statusCode != 200) {
+      final what = await _peek(res);
+      throw InnertubeException(
+          'YouTube page got HTTP ${res.statusCode}${what.isEmpty ? '' : ': $what'}');
+    }
+    _takeCookies(res, jar);
+
+    String? visitor;
+    var carry = '';
+    var seen = 0;
+    await for (final chunk in res.transform(const Utf8Decoder(allowMalformed: true))) {
+      final text = carry + chunk;
+      visitor = _visitorRe.firstMatch(text)?.group(1);
+      // leaving the loop drops the rest of the page (the connection is closed)
+      if (visitor != null) break;
+      seen += chunk.length;
+      if (seen > _pageLimit) break;
+      carry = text.length > 600 ? text.substring(text.length - 600) : text;
+    }
+    if (visitor == null) throw const InnertubeException('YouTube page had no visitor id');
+    debugPrint('direct lookup: session started in ${sw.elapsedMilliseconds}ms '
+        '(visitor id, cookies: ${jar.keys.join(', ')})');
+    return _Session(visitor, jar, id);
+  }
+
+  /// Keeps the cookies a response sets, the way a browser's cookie jar would.
+  static void _takeCookies(HttpClientResponse res, Map<String, String> jar) {
+    final lines = res.headers[HttpHeaders.setCookieHeader];
+    if (lines == null) return;
+    for (final line in lines) {
+      final parts = line.split(';');
+      final pair = parts.first;
+      final eq = pair.indexOf('=');
+      if (eq <= 0) continue;
+      final name = pair.substring(0, eq).trim();
+      final value = pair.substring(eq + 1).trim();
+      var gone = value.isEmpty;
+      for (final attr in parts.skip(1)) {
+        final a = attr.trim().toLowerCase();
+        if (a == 'max-age=0' || a.startsWith('max-age=-')) gone = true;
+        if (a.startsWith('expires=') && a.contains('1970')) gone = true;
+      }
+      if (gone) {
+        jar.remove(name);
+      } else {
+        jar[name] = value;
+      }
+    }
+  }
+
+  /// The start of an error page, for the log. Never throws.
+  static Future<String> _peek(HttpClientResponse res) async {
+    try {
+      final text = await res
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .join()
+          .timeout(const Duration(seconds: 3));
+      final one = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+      return one.length > 160 ? one.substring(0, 160) : one;
+    } catch (_) {
+      return '';
+    }
   }
 
   // ---------------- health ----------------
@@ -133,8 +269,7 @@ class InnertubeClient {
     bool countFailures = true,
   }) async {
     try {
-      final answer = await _ask(videoId).timeout(timeout);
-      final audio = _read(answer, videoId);
+      final audio = await _lookup(videoId).timeout(timeout);
       _succeeded();
       return audio;
     } on InnertubeException catch (e) {
@@ -154,7 +289,50 @@ class InnertubeClient {
     }
   }
 
-  static Future<Map<String, dynamic>> _ask(String videoId) async {
+  // After a lookup was refused with the shared session but went through with a session made
+  // on the song's own page (what yt-dlp does for every song), every lookup starts from the
+  // song's own page until this time.
+  static DateTime _pagePerSongUntil = DateTime.fromMillisecondsSinceEpoch(0);
+
+  static Future<InnertubeAudio> _lookup(String videoId) async {
+    final perSong = DateTime.now().isBefore(_pagePerSongUntil);
+    var session = perSong ? await _startSession(videoId) : await _sessionFor(videoId: videoId);
+    var retried = false;
+    var wasYoung = false;
+    while (true) {
+      try {
+        final answer = await _ask(videoId, session);
+        final audio = _read(answer, videoId);
+        if (retried) {
+          if (wasYoung) {
+            // refused on another song's page, fine on its own: do it that way for a while
+            _pagePerSongUntil = DateTime.now().add(const Duration(minutes: 30));
+            debugPrint('direct lookup: works with the song\'s own page, '
+                'loading one per song for a while');
+          } else {
+            _session = session; // the new one takes the place of the one that had gone stale
+          }
+        }
+        return audio;
+      } on InnertubeException catch (e) {
+        if (!e.botCheck) rethrow;
+        // YouTube takes this visitor for a bot. The session may be to blame: it may have
+        // gone stale (the phone changed networks, say), or it was made on another song's
+        // page. One made right now on this song's own page is the best there is: try that
+        // once. If even that is refused, that is the answer.
+        final best = session.page == videoId && session.age < const Duration(minutes: 1);
+        _dropSession(session);
+        if (retried || best) rethrow;
+        retried = true;
+        wasYoung = session.age < const Duration(minutes: 1);
+        debugPrint('direct lookup: refused as a bot with a session that is '
+            '${session.age.inSeconds}s old, trying a new one made on this song\'s page');
+        session = await _startSession(videoId);
+      }
+    }
+  }
+
+  static Future<Map<String, dynamic>> _ask(String videoId, _Session session) async {
     final body = utf8.encode(jsonEncode(<String, Object?>{
       'context': <String, Object?>{
         'client': <String, Object?>{
@@ -182,21 +360,23 @@ class InnertubeClient {
       ..set('X-YouTube-Client-Name', _clientNameId)
       ..set('X-YouTube-Client-Version', _clientVersion)
       ..set('Origin', 'https://www.youtube.com')
+      ..set('X-Goog-Visitor-Id', session.visitorData)
+      ..set(HttpHeaders.cookieHeader, session.cookieHeader)
       ..set(HttpHeaders.userAgentHeader, _userAgent)
       ..set(HttpHeaders.contentTypeHeader, 'application/json')
-      ..set(HttpHeaders.acceptLanguageHeader, 'en-US,en;q=0.9');
-    final visitor = _visitorData;
-    if (visitor != null) req.headers.set('X-Goog-Visitor-Id', visitor);
+      ..set(HttpHeaders.acceptHeader, _accept)
+      ..set(HttpHeaders.acceptLanguageHeader, _acceptLanguage)
+      ..set('Sec-Fetch-Mode', 'navigate');
     req.contentLength = body.length;
     req.add(body);
     final res = await req.close();
+    _takeCookies(res, session.cookies);
     if (res.statusCode != 200) {
-      try {
-        await res.drain<void>();
-      } catch (_) {}
-      throw InnertubeException('player request got HTTP ${res.statusCode}');
+      final what = await _peek(res);
+      throw InnertubeException(
+          'player request got HTTP ${res.statusCode}${what.isEmpty ? '' : ': $what'}');
     }
-    final text = await res.transform(utf8.decoder).join();
+    final text = await res.transform(const Utf8Decoder(allowMalformed: true)).join();
     final decoded = jsonDecode(text);
     if (decoded is! Map<String, dynamic>) {
       throw const InnertubeException('player answer is not what was expected');
@@ -219,19 +399,17 @@ class InnertubeClient {
   }
 
   static InnertubeAudio _read(Map<String, dynamic> answer, String videoId) {
-    _rememberVisitor(_asMap(answer['responseContext'])?['visitorData'] as String?);
-
     final status = _asMap(answer['playabilityStatus']);
     final state = status?['status'];
     if (state != 'OK') {
       final reasonRaw = status?['reason'];
       final reason = reasonRaw is String ? reasonRaw : '';
-      // "Sign in to confirm you're not a bot" is about the connection, not about the video
+      // "Sign in to confirm you're not a bot" is about the visitor, not about the video
       final bot = reason.toLowerCase().contains('bot');
-      if (bot) _visitorData = null; // start again with a fresh id
       throw InnertubeException(
         'YouTube says ${state ?? 'nothing'}${reason.isEmpty ? '' : ': $reason'}',
         videoSpecific: !bot,
+        botCheck: bot,
       );
     }
 

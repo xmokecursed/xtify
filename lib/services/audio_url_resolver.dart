@@ -95,7 +95,8 @@ class AudioUrlResolver {
     final prefs = await SharedPreferences.getInstance();
     final v = prefs.getInt(_prefKey) ?? 1;
     if (v > nativeIndex && v < _strategies.length) preferredStrategy = v;
-    await InnertubeClient.load();
+    // start the direct lookup's session now (a page load), so the first song does not wait for it
+    unawaited(InnertubeClient.warmUp());
   }
 
   static Future<void> ensureInitialized() => _initFuture ??= _init();
@@ -226,17 +227,30 @@ class AudioUrlResolver {
   static final Map<String, DateTime> _prefetchedAt = {};
   static const Duration _prefetchLife = Duration(minutes: 20);
 
+  // True while a prefetch is using yt-dlp (it looks up one song at a time).
+  static bool _ytDlpPrefetching = false;
+
   /// Start resolving in the background so the tap is fast. Safe to call repeatedly.
   /// The direct lookup can run for several songs at once; yt-dlp is one at a time, so it
   /// never starts one here while another lookup is running (a song the user taps meanwhile
-  /// would wait for it).
-  static void prefetch(String videoId) {
+  /// would wait for it). With [ytDlpFallback], a direct lookup that fails is followed by a
+  /// yt-dlp one (when yt-dlp is free): meant for the song most likely to be tapped.
+  static void prefetch(String videoId, {bool ytDlpFallback = false}) {
     if (_prefetched.containsKey(videoId) || _inflight.containsKey(videoId)) return;
     if (cached(videoId) != null) return;
     final direct = canLookUpDirectly(videoId);
-    if (!direct && (isBusy || _inflight.isNotEmpty)) return;
-    final f = AudioUrlResolver().resolve(videoId,
-        strategyIndex: direct ? nativeIndex : preferredStrategy, background: true);
+    if (!direct && (isBusy || _ytDlpPrefetching)) return;
+    final Future<ResolvedAudioUrl> f;
+    if (direct) {
+      f = ytDlpFallback
+          ? _directThenYtDlp(videoId)
+          : AudioUrlResolver()
+              .resolve(videoId, strategyIndex: nativeIndex, background: true);
+    } else {
+      _ytDlpPrefetching = true;
+      f = AudioUrlResolver()
+          .resolve(videoId, strategyIndex: preferredStrategy, background: true);
+    }
     _inflight[videoId] = f;
     unawaited(f.then<void>((r) {
       _prefetched[videoId] = r;
@@ -246,7 +260,26 @@ class AudioUrlResolver {
       debugPrint('prefetch failed for $videoId: $e');
     }).whenComplete(() {
       _inflight.remove(videoId);
+      if (!direct) _ytDlpPrefetching = false;
     }));
+  }
+
+  static Future<ResolvedAudioUrl> _directThenYtDlp(String videoId) async {
+    try {
+      return await AudioUrlResolver()
+          .resolve(videoId, strategyIndex: nativeIndex, background: true);
+    } catch (e) {
+      // not worth queuing behind a lookup that is already running
+      if (isBusy || _ytDlpPrefetching) rethrow;
+      debugPrint('[$videoId] prefetch: direct lookup failed ($e), trying yt-dlp');
+      _ytDlpPrefetching = true;
+      try {
+        return await AudioUrlResolver()
+            .resolve(videoId, strategyIndex: preferredStrategy, background: true);
+      } finally {
+        _ytDlpPrefetching = false;
+      }
+    }
   }
 
   static void _trimPrefetched() {
