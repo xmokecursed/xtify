@@ -17,6 +17,10 @@ class TrackRow extends StatelessWidget {
   final bool showDownload;
   final bool showMore;
 
+  /// The search text this song was found with (search results), so that the "same artist" auto
+  /// queue can follow the artist the user looked for.
+  final String? searchedFor;
+
   const TrackRow({
     super.key,
     required this.track,
@@ -24,6 +28,7 @@ class TrackRow extends StatelessWidget {
     this.showFavourite = true,
     this.showDownload = true,
     this.showMore = true,
+    this.searchedFor,
   });
 
   @override
@@ -42,8 +47,8 @@ class TrackRow extends StatelessWidget {
   Widget _row(BuildContext context) {
     return InkWell(
       onTap: playableNow(track)
-          ? (onTap ?? () => playTrackWithFeedback(context, track))
-          : () => playTrackWithFeedback(context, track),
+          ? (onTap ?? () => playTrackWithFeedback(context, track, searchedFor: searchedFor))
+          : () => playTrackWithFeedback(context, track, searchedFor: searchedFor),
       onLongPress: () => showTrackOptions(context, track),
       child: Padding(
         padding: const EdgeInsets.symmetric(

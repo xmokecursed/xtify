@@ -9,6 +9,7 @@ import 'package:xtify_app/screens/library_screen.dart';
 import 'package:xtify_app/services/audio_service.dart';
 import 'package:xtify_app/services/yt_dlp_update_service.dart';
 import 'package:xtify_app/services/audio_url_resolver.dart';
+import 'package:xtify_app/services/auto_queue_settings.dart';
 import 'package:xtify_app/services/connectivity_service.dart';
 import 'package:xtify_app/services/cookie_service.dart';
 import 'package:xtify_app/services/cookie_refresh_service.dart';
@@ -41,6 +42,7 @@ void main() async {
     await CookieService.instance.init();
     await ConnectivityService.instance.init();
     await AudioUrlResolver.loadPreferred();
+    await AutoQueueSettings.instance.init(); // similar songs / same artist
     await HistoryService.instance.init();
     await ArtistMixService.instance.init();
     await PlaylistService.instance.init();

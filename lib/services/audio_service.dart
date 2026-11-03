@@ -7,7 +7,9 @@ import '../services/connectivity_service.dart';
 import '../services/download_service.dart';
 import '../services/history_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'artist_credit.dart';
 import 'auto_queue_service.dart';
+import 'auto_queue_settings.dart';
 import 'chunked_audio_source.dart';
 import 'cookie_service.dart';
 import 'package:flutter/foundation.dart';
@@ -46,6 +48,16 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _preparingNext = false;
   bool _settingSource = false;
   int _prepareAttempts = 0;
+  // Songs the user picked that are still being loaded (see [playTrack]). Meanwhile the old song
+  // can still be playing, and its position ticks must not start preparing what follows the NEW
+  // song: that "next" song went into the old song's playlist, which the new song then replaced
+  // (the log showed "possession ready ... player has 2 source(s)" before the new song started).
+  // The queue then showed a next song the player did not have, and nothing was prepared again,
+  // so when the new song ended, the next one still had to be looked up first.
+  int _loading = 0;
+  DateTime _loadingSince = DateTime.fromMillisecondsSinceEpoch(0);
+  bool get _loadingSong =>
+      _loading > 0 && DateTime.now().difference(_loadingSince) < const Duration(seconds: 40);
   DateTime _lastPrepareAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _prepareLead = Duration(hours: 24);
   final ValueNotifier<bool> findingNext = ValueNotifier<bool>(false);
@@ -418,8 +430,33 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Play a track: cached URL first, then each strategy until the
   /// player can actually open the stream.
+  ///
+  /// [searchedFor] is what the user searched for to find [track] (or the artist page it was
+  /// picked on), if anything: "same artist" in the auto queue follows that artist when the song
+  /// is credited to them.
   Future<void> playTrack(Track track,
-      {bool userInitiated = true, bool keepContext = false, Duration? startAt}) async {
+      {bool userInitiated = true,
+      bool keepContext = false,
+      Duration? startAt,
+      String? searchedFor}) async {
+    _loading++;
+    _loadingSince = DateTime.now();
+    try {
+      await _playTrack(track,
+          userInitiated: userInitiated,
+          keepContext: keepContext,
+          startAt: startAt,
+          searchedFor: searchedFor);
+    } finally {
+      _loading--;
+    }
+  }
+
+  Future<void> _playTrack(Track track,
+      {required bool userInitiated,
+      required bool keepContext,
+      Duration? startAt,
+      String? searchedFor}) async {
     final token = ++_playToken;
     _gaveUp = false; // a new attempt: the watchdog may watch again
     // a queued song that was loaded as "next" goes back to the front of the queue
@@ -447,7 +484,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     _tracksById[track.id] = track;
     if (userInitiated) {
-      _autoQueue.startSession(track);
+      _autoQueue.startSession(track, searchedFor: searchedFor);
     } else {
       _autoQueue.advanced(track);
     }
@@ -606,23 +643,81 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     final inContext = _contextNext(seed, offline);
     if (inContext != null) return inContext;
     if (offline) {
-      final others = DownloadService.instance.items.value.values
+      // "same artist" mode: the artist's own downloaded songs first
+      final followed = _autoQueue.focusFor(seed);
+      var saved = DownloadService.instance.items.value.values
           .map((e) => e.track)
           .where((t) => t.id != seed.id)
-          .toList()
-        ..shuffle();
-      return others.firstOrNull;
+          .toList();
+      if (followed != null) {
+        final mine = saved.where((t) => ArtistCredit.of(t).has(followed)).toList();
+        if (mine.isNotEmpty) saved = mine;
+      }
+      saved.shuffle();
+      return saved.firstOrNull;
     }
     final next = await _autoQueue.nextFor(seed);
     if (next != null) return next;
     // Fall back only to another song by the SAME artist; never jump to an unrelated artist.
+    // In "same artist" mode that is the artist being followed.
+    final focus = _autoQueue.focusFor(seed);
     final a = seed.artist.trim().toLowerCase();
-    if (a.isEmpty) return null;
+    if (focus == null && a.isEmpty) return null;
     final others = HistoryService.instance.tracks.value
-        .where((t) => t.id != seed.id && t.artist.trim().toLowerCase() == a)
+        .where((t) =>
+            t.id != seed.id &&
+            (focus != null
+                ? ArtistCredit.of(t).has(focus)
+                : t.artist.trim().toLowerCase() == a))
         .toList()
       ..shuffle();
     return others.firstOrNull;
+  }
+
+  // ---------------- the auto queue setting ----------------
+
+  /// The next song is picked by the auto queue (not by the user's queue or a playlist).
+  bool _autoQueueDrives(Track seed) {
+    if (_userQueue.isNotEmpty || _preloadedFromUser) return false;
+    final offline = !ConnectivityService.instance.online.value;
+    return _contextNext(seed, offline) == null;
+  }
+
+  /// The setting changed, most likely in the middle of a song, and the auto queue picks again
+  /// for the song that is playing. The song already waiting as "next" is looked at first: it
+  /// stays when it fits the new setting ("same artist": it is by the artist now followed),
+  /// otherwise it is replaced.
+  Future<void> _autoQueueChanged() async {
+    _autoQueue.restart();
+    final t = _currentTrack;
+    // A queued song or a playlist comes first: the setting applies once they run out.
+    if (t == null || !_autoQueueDrives(t)) return;
+    final followed = _autoQueue.focusFor(t); // null: similar songs, and any song fits
+    final waiting = _preloaded;
+    final fits = _nextQueued &&
+        waiting != null &&
+        (followed == null || ArtistCredit.of(waiting).has(followed));
+    final who = followed == null ? 'similar songs' : 'only songs by "$followed"';
+    final next = waiting == null
+        ? 'no next song chosen yet'
+        : fits
+            ? 'next song kept: "${waiting.title}"'
+            : 'next song replaced: "${waiting.title}"';
+    debugPrint('auto-queue: setting changed ($who), $next');
+    if (!fits) await _dropPreloaded();
+    _autoQueue.warm(t); // picks what comes next in the background
+    if (fits) return;
+    // While playing, the next position tick loads it. Paused, there are no ticks: start it here.
+    final dur = _player.duration;
+    if (_sourceLoaded && dur != null && dur > Duration.zero) _prepareNext();
+  }
+
+  /// Auto queue: similar songs (default) or only songs by one artist.
+  Future<void> setAutoQueueMode(AutoQueueMode mode) async {
+    final settings = AutoQueueSettings.instance;
+    if (settings.mode.value == mode) return;
+    await settings.setMode(mode);
+    await _autoQueueChanged();
   }
 
   /// Takes [t] off the front of the user's queue when it is the song that was picked from it.
@@ -650,7 +745,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_sourceLoaded && DateTime.now().difference(_lastSaved) > const Duration(seconds: 5)) {
       _savePosition(pos);
     }
-    if (_nextQueued || _preparingNext || _currentTrack == null) return;    
+    if (_nextQueued || _preparingNext || _currentTrack == null || _loadingSong) return;
     final dur = _player.duration;    
     if (dur == null || dur == Duration.zero) return;    
     if (dur - pos > _prepareLead) return;    
@@ -661,7 +756,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Future<void> _prepareNext() async {
     final seed = _currentTrack;
-    if (seed == null || _preparingNext || _nextQueued) return;
+    if (seed == null || _preparingNext || _nextQueued || _loadingSong) return;
     if (repeat.value == XtifyRepeat.one) return; // the same song plays again, nothing to load
     _preparingNext = true;
     findingNext.value = true;

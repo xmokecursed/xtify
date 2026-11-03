@@ -14,17 +14,20 @@ bool playableNow(Track t) =>
 /// Plays [track] and keeps the user informed (preparing / error + retry).
 final Set<String> _loadingIds = {};
 
-Future<void> playTrackWithFeedback(BuildContext context, Track track) async {
+/// [searchedFor] is the search text the song was picked from, if any: the "same artist" auto
+/// queue follows that artist when the song is credited to them.
+Future<void> playTrackWithFeedback(BuildContext context, Track track,
+    {String? searchedFor}) async {
   // the same song is already loading: extra taps do nothing
   if (!_loadingIds.add(track.id)) return;
   try {
-    await _playWithFeedback(context, track);
+    await _playWithFeedback(context, track, searchedFor);
   } finally {
     _loadingIds.remove(track.id);
   }
 }
 
-Future<void> _playWithFeedback(BuildContext context, Track track) async {
+Future<void> _playWithFeedback(BuildContext context, Track track, String? searchedFor) async {
   final messenger = ScaffoldMessenger.of(context);
   messenger.hideCurrentSnackBar();
   if (!playableNow(track)) {
@@ -42,7 +45,7 @@ Future<void> _playWithFeedback(BuildContext context, Track track) async {
   );
 
   try {
-    await XtifyAudioHandler.instance.playTrack(track);
+    await XtifyAudioHandler.instance.playTrack(track, searchedFor: searchedFor);
     messenger.hideCurrentSnackBar();
   } catch (e) {
     messenger.hideCurrentSnackBar();
@@ -62,7 +65,9 @@ Future<void> _playWithFeedback(BuildContext context, Track track) async {
             : SnackBarAction(
                 label: 'Retry',
                 onPressed: () {
-                  if (context.mounted) playTrackWithFeedback(context, track);
+                  if (context.mounted) {
+                    playTrackWithFeedback(context, track, searchedFor: searchedFor);
+                  }
                 },
               ),
         duration: const Duration(seconds: 8),
