@@ -23,7 +23,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
   Future<void> _playKnown(Track t) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await XtifyAudioHandler.instance.playTrack(t);
+      await XtifyAudioHandler.instance.playTrack(t, searchedFor: widget.name);
     } catch (e) {
       messenger.showSnackBar(
         const SnackBar(content: Text('Could not play this song')),
@@ -44,7 +44,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
         messenger.showSnackBar(SnackBar(content: Text('Could not find "${t.title}"')));
         return;
       }
-      await XtifyAudioHandler.instance.playTrack(found);
+      await XtifyAudioHandler.instance.playTrack(found, searchedFor: widget.name);
     } catch (e) {
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(

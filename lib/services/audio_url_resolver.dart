@@ -244,12 +244,12 @@ class AudioUrlResolver {
     if (direct) {
       f = ytDlpFallback
           ? _directThenYtDlp(videoId)
-          : AudioUrlResolver()
-              .resolve(videoId, strategyIndex: nativeIndex, background: true);
+          : AudioUrlResolver().resolve(videoId,
+              strategyIndex: nativeIndex, background: true, checkWait: _prefetchCheckWait);
     } else {
       _ytDlpPrefetching = true;
-      f = AudioUrlResolver()
-          .resolve(videoId, strategyIndex: preferredStrategy, background: true);
+      f = AudioUrlResolver().resolve(videoId,
+          strategyIndex: preferredStrategy, background: true, checkWait: _prefetchCheckWait);
     }
     _inflight[videoId] = f;
     unawaited(f.then<void>((r) {
@@ -266,16 +266,16 @@ class AudioUrlResolver {
 
   static Future<ResolvedAudioUrl> _directThenYtDlp(String videoId) async {
     try {
-      return await AudioUrlResolver()
-          .resolve(videoId, strategyIndex: nativeIndex, background: true);
+      return await AudioUrlResolver().resolve(videoId,
+          strategyIndex: nativeIndex, background: true, checkWait: _prefetchCheckWait);
     } catch (e) {
       // not worth queuing behind a lookup that is already running
       if (isBusy || _ytDlpPrefetching) rethrow;
       debugPrint('[$videoId] prefetch: direct lookup failed ($e), trying yt-dlp');
       _ytDlpPrefetching = true;
       try {
-        return await AudioUrlResolver()
-            .resolve(videoId, strategyIndex: preferredStrategy, background: true);
+        return await AudioUrlResolver().resolve(videoId,
+            strategyIndex: preferredStrategy, background: true, checkWait: _prefetchCheckWait);
       } finally {
         _ytDlpPrefetching = false;
       }
@@ -330,14 +330,16 @@ class AudioUrlResolver {
   /// its clients. [background] = nobody is waiting for it (prefetch, the next song, a
   /// download): a song the user is waiting for goes first on yt-dlp's single lane.
   Future<ResolvedAudioUrl> resolve(String videoId,
-      {required int strategyIndex, bool background = false}) async {
+      {required int strategyIndex, bool background = false, Duration? checkWait}) async {
     if (!RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(videoId)) {
       throw Exception('Invalid YouTube video ID');
     }
     final s = _strategies[strategyIndex];
     // The direct lookup does not touch yt-dlp at all, so it does not wait for yt-dlp to start
     // or to update either.
-    if (s.native) return _resolveDirect(videoId, strategyIndex);
+    if (s.native) {
+      return _resolveDirect(videoId, strategyIndex, wait: checkWait ?? _checkWait(background));
+    }
 
     await ensureInitialized();
     // a new enough yt-dlp first (only the very first song after an install waits for this)
@@ -387,7 +389,10 @@ class AudioUrlResolver {
     final headers = _headersOf(format);
     // YouTube cuts some links off after the first MiB or refuses them: find out now, so the
     // next strategy can be tried, instead of a song that stops after a minute
-    final bad = await linkProblem(audioUrl, headers: headers);
+    final bad = await linkProblem(audioUrl,
+        headers: headers,
+        wait: checkWait ?? _checkWait(background),
+        onLate: (why) => _foundBadLate(videoId, s.label, why));
     if (bad != null) {
       debugPrint('[$videoId] ${s.label}: link refused, $bad');
       throw Exception('YouTube refuses this link ($bad)');
@@ -395,15 +400,39 @@ class AudioUrlResolver {
     return ResolvedAudioUrl(url: audioUrl, headers: headers, strategy: strategyIndex);
   }
 
+  /// How long the link check may hold a song up (see [linkProblem]). A song somebody is waiting
+  /// for gets two seconds: a connection that is stuck must not cost the ten seconds it takes
+  /// to give up. Background work (the next song, a prefetch) can wait longer.
+  static Duration _checkWait(bool background) => Duration(seconds: background ? 6 : 2);
+
+  // A prefetched song is tapped within seconds, and the tap then waits for it: two seconds too.
+  static const Duration _prefetchCheckWait = Duration(seconds: 2);
+
+  /// A link check that was not waited for to the end found the link bad after all: the link is
+  /// forgotten, so that nothing plays it again.
+  static void _foundBadLate(String videoId, String label, String why) {
+    debugPrint('[$videoId] $label: link refused (found out late), $why');
+    clearCache(videoId);
+    _prefetched.remove(videoId);
+    _prefetchedAt.remove(videoId);
+  }
+
   /// The direct lookup: one request to YouTube's player API (see [InnertubeClient]).
-  static Future<ResolvedAudioUrl> _resolveDirect(String videoId, int strategyIndex) async {
+  static Future<ResolvedAudioUrl> _resolveDirect(String videoId, int strategyIndex,
+      {required Duration wait}) async {
     final sw = Stopwatch()..start();
     // offline: a failure says nothing about the lookup, so it must not switch it off
     final online = ConnectivityService.instance.online.value;
     final found = await InnertubeClient.audioFor(videoId, countFailures: online);
     final lookupMs = sw.elapsedMilliseconds;
     // same check the yt-dlp links get: YouTube cuts some links off or refuses them
-    final bad = await linkProblem(found.url, headers: const {});
+    final bad = await linkProblem(found.url,
+        headers: const {},
+        wait: wait,
+        onLate: (why) {
+          _foundBadLate(videoId, 'native', why);
+          if (online) InnertubeClient.noteBadLink(why);
+        });
     if (bad != null) {
       debugPrint('[$videoId] native: link refused, $bad');
       if (online) InnertubeClient.noteBadLink(bad);
@@ -504,6 +533,8 @@ class AudioUrlResolver {
           debugPrint('probe [${e.key}]: HTTP ${res.statusCode}');
         } catch (err) {
           debugPrint('probe [${e.key}]: failed ${err.runtimeType}');
+          // no connection at all: the other requests would fail the same way, one after the other
+          if (err is SocketException || err is TimeoutException) break;
         }
       }
     } finally {

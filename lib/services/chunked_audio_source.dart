@@ -1,15 +1,19 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' show max, min;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'hedged.dart';
 
 const String _fallbackUserAgent =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
     'Chrome/141.0.0.0 Safari/537.36';
 
+// A connection that has not come up after 8 s is given up (a new one is started after 2 s
+// anyway, and again after 4 s, see [hedged]).
 final HttpClient _http = HttpClient()
   ..autoUncompress = false
-  ..connectionTimeout = const Duration(seconds: 10)
+  ..connectionTimeout = const Duration(seconds: 8)
   ..idleTimeout = const Duration(seconds: 30);
 
 /// A direct media link on googlevideo (not a playlist or manifest).
@@ -30,16 +34,66 @@ AudioSource audioSourceFor(String url, {Map<String, String>? headers, dynamic ta
   );
 }
 
-/// One bounded request for bytes [from] to [toInclusive] of [uri]. The answer is not read here.
+/// One bounded request for bytes [from] to [toInclusive] of [uri]. The answer's headers are
+/// waited for; its body is not read here.
+///
+/// A connection that goes nowhere (a lost packet, a link the phone's network dropped without
+/// saying so) used to cost the whole ten seconds of a connection timeout, twice over, before
+/// anything else was tried. Now the request is asked again on a new connection after two
+/// seconds ([hedged]), up to [tries] times in all, and whichever answers first is used.
 Future<HttpClientResponse> _rangeRequest(
-    Uri uri, Map<String, String> headers, int from, int toInclusive) async {
-  final req = await _http.getUrl(uri);
-  headers.forEach((k, v) => req.headers.set(k, v));
-  if (!headers.keys.any((k) => k.toLowerCase() == 'user-agent')) {
-    req.headers.set(HttpHeaders.userAgentHeader, _fallbackUserAgent);
+    Uri uri, Map<String, String> headers, int from, int toInclusive,
+    {int tries = 3, Duration limit = const Duration(seconds: 12)}) {
+  Future<HttpClientResponse> attempt() async {
+    final sw = Stopwatch()..start();
+    final req = await _http.getUrl(uri);
+    final connected = sw.elapsedMilliseconds;
+    try {
+      headers.forEach((k, v) => req.headers.set(k, v));
+      if (!headers.keys.any((k) => k.toLowerCase() == 'user-agent')) {
+        req.headers.set(HttpHeaders.userAgentHeader, _fallbackUserAgent);
+      }
+      req.headers.set(HttpHeaders.rangeHeader, 'bytes=$from-$toInclusive');
+      final res = await req.close().timeout(const Duration(seconds: 10));
+      final total = sw.elapsedMilliseconds;
+      if (total > 1500) {
+        // tells a slow connection (lookup, connect, TLS) from a slow server
+        debugPrint('slow answer from ${uri.host}: connected after ${connected}ms, '
+            'headers after ${total}ms');
+      }
+      return res;
+    } catch (_) {
+      req.abort(); // lets go of the connection
+      rethrow;
+    }
   }
-  req.headers.set(HttpHeaders.rangeHeader, 'bytes=$from-$toInclusive');
-  return req.close().timeout(const Duration(seconds: 15));
+
+  return hedged<HttpClientResponse>(
+    attempt,
+    tries: tries,
+    limit: limit,
+    discard: _letGo,
+    onExtra: (n) =>
+        debugPrint('no answer from ${uri.host} yet, asking again on a new connection (try $n)'),
+  );
+}
+
+/// An answer nobody wants any more: cancelling it closes its connection, nothing is downloaded.
+void _letGo(HttpClientResponse res) {
+  unawaited(res.listen(null).cancel());
+}
+
+/// What went wrong, short, and without the link (it is signed and holds the phone's address).
+String _why(Object e) {
+  if (e is SocketException) {
+    final os = e.osError;
+    final text = e.message.startsWith('HTTP connection timed out')
+        ? 'connecting took too long'
+        : e.message;
+    return 'SocketException: $text${os == null ? '' : ' (${os.message}, code ${os.errorCode})'}';
+  }
+  if (e is TimeoutException) return 'TimeoutException: no answer in time';
+  return e.runtimeType.toString();
 }
 
 /// Asks for two bytes from the middle of the file, the way the player will, and says what is
@@ -47,16 +101,45 @@ Future<HttpClientResponse> _rangeRequest(
 ///
 /// YouTube cuts some links off after about 1 MiB (a minute of audio) and refuses others
 /// outright. Asking past the first MiB shows that now, instead of a minute into the song.
-Future<String?> linkProblem(String url, {Map<String, String> headers = const {}}) async {
+///
+/// A song must not wait long for this: after [wait] without an answer the answer is "nothing
+/// known" and the song goes on (the player's own request starts at once, which is also a second
+/// try at connecting). The check is not given up, though: if it finds the link bad later,
+/// [onLate] hears of it.
+Future<String?> linkProblem(String url,
+    {Map<String, String> headers = const {},
+    Duration wait = const Duration(seconds: 2),
+    void Function(String problem)? onLate}) {
   final uri = Uri.tryParse(url);
-  if (uri == null || !_isDirectMedia(uri)) return null;
+  if (uri == null || !_isDirectMedia(uri)) return Future<String?>.value(null);
+  final answer = Completer<String?>();
+  final timer = Timer(wait, () {
+    if (answer.isCompleted) return;
+    debugPrint('link check: no answer after ${wait.inMilliseconds}ms, going on without it');
+    answer.complete(null);
+  });
+  unawaited(_checkLink(uri, headers).then<void>((bad) {
+    timer.cancel();
+    if (!answer.isCompleted) {
+      answer.complete(bad);
+    } else if (bad != null) {
+      debugPrint('link check, late: $bad');
+      onLate?.call(bad);
+    }
+  }));
+  return answer.future;
+}
+
+/// The check itself ([linkProblem] decides how long anyone waits for it). Never throws.
+Future<String?> _checkLink(Uri uri, Map<String, String> headers) async {
   final clen = int.tryParse(uri.queryParameters['clen'] ?? '');
   // past the first MiB, where the cut-off links stop working; near the end of a short file
   final at = clen == null ? 0 : max(0, min(clen - 2, max(1310720, clen ~/ 2)));
   final what = 'bytes=$at-${at + 1}';
   final sw = Stopwatch()..start();
   try {
-    final res = await _rangeRequest(uri, headers, at, at + 1);
+    final res = await _rangeRequest(uri, headers, at, at + 1,
+        tries: 2, limit: const Duration(seconds: 10));
     final code = res.statusCode;
     try {
       if (code == 206 || code >= 400) {
@@ -76,7 +159,7 @@ Future<String?> linkProblem(String url, {Map<String, String> headers = const {}}
     debugPrint('link check skipped: HTTP $code for $what');
     return null;
   } catch (e) {
-    debugPrint('link check skipped (${e.runtimeType})');
+    debugPrint('link check skipped (${_why(e)}) after ${sw.elapsedMilliseconds}ms');
     return null;
   }
 }
@@ -125,28 +208,23 @@ class ChunkedHttpAudioSource extends StreamAudioSource {
     return (m != null && m.contains('/')) ? m : 'audio/mp4';
   }
 
-  /// One bounded request for bytes [from] to [toInclusive].
+  /// One bounded request for bytes [from] to [toInclusive]. A connection that goes nowhere is
+  /// asked again on a new connection (up to three in all), see [_rangeRequest].
   Future<HttpClientResponse> _open(int from, int toInclusive) async {
     final what = 'bytes=$from-$toInclusive';
-    for (var attempt = 0;; attempt++) {
+    try {
+      final res = await _rangeRequest(uri, headers, from, toInclusive);
+      if (res.statusCode == 206 || (res.statusCode == 200 && from == 0)) return res;
+      final status = res.statusCode;
       try {
-        final res = await _rangeRequest(uri, headers, from, toInclusive);
-        if (res.statusCode == 206 || (res.statusCode == 200 && from == 0)) return res;
-        final status = res.statusCode;
-        try {
-          await res.drain<void>().timeout(const Duration(seconds: 2));
-        } catch (_) {}
-        throw _Refused(status, what);
-      } on _Refused {
-        rethrow;
-      } catch (e) {
-        // a dropped connection or a slow answer: one more try, then give up
-        if (attempt >= 1) {
-          debugPrint('chunked source: $what failed ($e)');
-          rethrow;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 300));
-      }
+        await res.drain<void>().timeout(const Duration(seconds: 2));
+      } catch (_) {}
+      throw _Refused(status, what);
+    } on _Refused {
+      rethrow;
+    } catch (e) {
+      debugPrint('chunked source: $what failed (${_why(e)})');
+      rethrow;
     }
   }
 

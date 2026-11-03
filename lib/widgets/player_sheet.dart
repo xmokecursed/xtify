@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
 import 'package:xtify_app/services/audio_service.dart';
+import 'package:xtify_app/services/auto_queue_settings.dart';
 import 'package:xtify_app/services/cookie_service.dart';
 import 'package:xtify_app/screens/youtube_login_screen.dart';
 import 'package:rxdart/rxdart.dart';
@@ -432,19 +433,24 @@ class _PlayerSheetState extends State<PlayerSheet> {
           // Secondary actions: favourite / download / playlist / queue / YouTube
           const _ActionRow(),
           const SizedBox(height: 28),
-          // Up next
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Up next',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.3,
+          // Up next, with the auto queue setting (gear) at the right
+          const Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Up next',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3,
+                  ),
+                ),
               ),
-            ),
+              _AutoQueueGear(),
+            ],
           ),
+          const _AutoQueueNotice(),
           const SizedBox(height: 8),
           StreamBuilder<List<MediaItem>>(
             stream: XtifyAudioHandler.instance.queue,
@@ -789,6 +795,221 @@ class _ActionRow extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The auto queue setting, at the right of "Up next". Brighter while "same artist" is on.
+class _AutoQueueGear extends StatelessWidget {
+  const _AutoQueueGear();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<AutoQueueMode>(
+      valueListenable: AutoQueueSettings.instance.mode,
+      builder: (context, mode, _) {
+        final on = mode == AutoQueueMode.sameArtist;
+        return IconButton(
+          tooltip: 'Auto queue settings',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+          icon: Icon(
+            Icons.settings_rounded,
+            size: 22,
+            color: on ? Colors.white : AppColors.textSecondary,
+          ),
+          onPressed: () {
+            HapticFeedback.selectionClick();
+            showAutoQueueSheet(context);
+          },
+        );
+      },
+    );
+  }
+}
+
+/// Under "Up next" while "same artist" is on: whose songs the auto queue plays, or a hint when
+/// it could not do that.
+class _AutoQueueNotice extends StatelessWidget {
+  const _AutoQueueNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AutoQueueSettings.instance;
+    return ListenableBuilder(
+      listenable: Listenable.merge([s.mode, s.focus, s.note]),
+      builder: (context, _) {
+        final focus = s.focus.value;
+        final note = s.note.value;
+        final text = note ??
+            (focus == null || focus.needsCheck
+                ? 'Auto queue: same artist only'
+                : 'Auto queue: only songs by ${focus.name}');
+        return AnimatedSize(
+          duration: AppMotion.fast,
+          curve: AppMotion.curve,
+          alignment: Alignment.topLeft,
+          child: s.mode.value != AutoQueueMode.sameArtist
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: const EdgeInsets.only(top: 2, bottom: 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        note == null ? Icons.person_rounded : Icons.info_outline_rounded,
+                        size: 14,
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          text,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        );
+      },
+    );
+  }
+}
+
+/// The auto queue setting: similar songs (YouTube Music's own suggestions, the default) or
+/// only songs by one artist.
+Future<void> showAutoQueueSheet(BuildContext context) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => const SafeArea(child: _AutoQueueSheet()),
+  );
+}
+
+class _AutoQueueSheet extends StatelessWidget {
+  const _AutoQueueSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AutoQueueSettings.instance;
+    final h = XtifyAudioHandler.instance;
+    return ListenableBuilder(
+      listenable: Listenable.merge([s.mode, s.focus]),
+      builder: (context, _) {
+        final mode = s.mode.value;
+        final focus = s.focus.value;
+        // whose songs play, once that is known
+        final artist = mode == AutoQueueMode.sameArtist && focus != null && !focus.needsCheck
+            ? focus.name
+            : null;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.screen, 4, AppSpacing.screen, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Auto queue',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'What plays when your queue and playlist run out.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+              ),
+              const SizedBox(height: 16),
+              _ModeTile(
+                title: 'Similar songs',
+                subtitle: 'What YouTube Music suggests after this song',
+                selected: mode == AutoQueueMode.similar,
+                onTap: () => h.setAutoQueueMode(AutoQueueMode.similar),
+              ),
+              const SizedBox(height: 10),
+              _ModeTile(
+                title: 'Same artist',
+                subtitle: artist == null ? 'Only songs by one artist' : 'Only songs by $artist',
+                selected: mode == AutoQueueMode.sameArtist,
+                onTap: () => h.setAutoQueueMode(AutoQueueMode.sameArtist),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One choice in the auto queue sheet: a card with a check on the chosen one.
+class _ModeTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ModeTile({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      haptic: true,
+      scale: 0.98,
+      debounce: const Duration(milliseconds: 250),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: AppMotion.fast,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.card.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          border: Border.all(
+            color: selected ? Colors.white : AppColors.hairline,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            AnimatedSwitcher(
+              duration: AppMotion.fast,
+              child: Icon(
+                selected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                key: ValueKey(selected),
+                size: 22,
+                color: selected ? Colors.white : AppColors.textTertiary,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

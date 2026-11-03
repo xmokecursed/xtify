@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'hedged.dart';
 
 /// One audio stream of a video, found by [InnertubeClient].
 class InnertubeAudio {
@@ -127,7 +128,15 @@ class InnertubeClient {
         ? videoId
         : _warmUpVideo;
     try {
-      return await _loadPage(id).timeout(const Duration(seconds: 10));
+      // a page load that has not answered after 3 s is asked for again on a new connection
+      // (the one kept open from earlier may be dead)
+      return await hedged<_Session>(
+        () => _loadPage(id),
+        after: const Duration(seconds: 3),
+        tries: 2,
+        limit: const Duration(seconds: 10),
+        fatal: (e) => e is InnertubeException,
+      );
     } on TimeoutException {
       throw const InnertubeException('YouTube page: no answer in 10s');
     }
@@ -332,7 +341,23 @@ class InnertubeClient {
     }
   }
 
-  static Future<Map<String, dynamic>> _ask(String videoId, _Session session) async {
+  /// The player request. When it has not been answered after two and a half seconds it is asked
+  /// again on a new connection: the connection kept open between lookups may have been dropped
+  /// by the phone's network without anyone being told, and waiting for it to give up would cost
+  /// the lookup its whole six seconds (and count as a failure of the direct lookup).
+  static Future<Map<String, dynamic>> _ask(String videoId, _Session session) {
+    return hedged<Map<String, dynamic>>(
+      () => _askOnce(videoId, session),
+      after: const Duration(milliseconds: 2500),
+      tries: 2,
+      limit: const Duration(seconds: 8),
+      // what the server answered (an HTTP error) is not made better by asking again
+      fatal: (e) => e is InnertubeException,
+      onExtra: (n) => debugPrint('direct lookup: no answer after 2.5 s, asking again on a new connection'),
+    );
+  }
+
+  static Future<Map<String, dynamic>> _askOnce(String videoId, _Session session) async {
     final body = utf8.encode(jsonEncode(<String, Object?>{
       'context': <String, Object?>{
         'client': <String, Object?>{

@@ -100,7 +100,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 else
                   SliverList(
                     delegate: SliverChildBuilderDelegate(
-                      (context, index) => TrackRow(track: state.tracks[index]),
+                      (context, index) =>
+                          TrackRow(track: state.tracks[index], searchedFor: state.query),
                       childCount: state.tracks.length,
                     ),
                   ),
