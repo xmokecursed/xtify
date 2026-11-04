@@ -4,9 +4,9 @@
 
 # Xtify
 
-**A clean, ad-free music player for Android. Search any song, play it, and keep your favourites offline.**
+**A clean, ad-free music player for Android. Search any song, play it, keep your favourites offline.**
 
-[Download the APK](../../releases/latest) · [How it works](#how-it-works) · [Build it yourself](#build-it-yourself)
+[Download](../../releases/latest) · [Install](#install) · [How it works](#how-it-works)
 
 </div>
 
@@ -24,122 +24,94 @@
 
 ---
 
-## What it can do
+## Features
 
 **Listen**
-- Search songs and artists and start playing **within 30-40s (only the first)**.
-- **Auto-queue:** when your song ends, Xtify picks a similar one so the music never stops. It doesn't take 30-40s to load.
+- Search songs and artists and play them. The first song after opening the app can take a bit longer to start.
+- **Auto-queue:** when a song ends, Xtify picks the next one. Use the gear next to *Up next* to choose **similar songs** or **same artist only**.
 - **Made for you:** a mix for each artist you listen to.
-- Play next, add to queue, reorder the queue, shuffle and repeat (off / all / one).
-- Plays in the background, with controls on the lock screen and notification.
+- Play next, add to queue, reorder, shuffle and repeat.
+- Background play, with lock-screen and notification controls.
 - Remembers the last song and where you stopped.
+- Mostly Spotify/YTMusic premium experience.
 
 **Keep**
-- **Playlists and Favourites** with sort (recently added, title, artist) and a filter box.
-- **Downloads:** save songs on your phone with the title, artist and cover art written into the file, so other music apps show them properly. Pick any download folder.
-- **Offline mode:** with no internet, Xtify shows only what you downloaded and plays it with covers.
-- History, with a way to remove single songs. Undo is one tap away.
+- **Playlists and Favourites**, with modern sorting and a filtering options.
+- **Downloads** with title, artist and cover art written into the file.
+- **Offline mode:** with no internet, only your downloads show and play.
+- History upto last 30 songs.
 
-**Everyday comfort**
-- no ads and no banners.
-- Open the original YouTube video of any song.
-- A "Sign in again" notice when your login expires.
-- **Copy debug info** button in the Library tab, for easy bug reports.
-
----
-
-## Why a Google sign-in?
-
-Xtify gets its songs from YouTube. YouTube often refuses requests that do not look like a real signed-in person and answers with *"Sign in to confirm you're not a bot"*. Signing in once inside the app solves that.
-
-- The login happens in a normal Google page inside the app. Xtify never sees your password.
-- Xtify keeps only the session cookies, in its own private storage on your phone.
-- The cookies are used on your phone to ask YouTube for the audio. They are not sent to Xtify's server. The server only handles searches and recommendations.
-- Signing out in the app deletes them.
-- **Tip:** use a secondary Google account if you can. Automated-looking use of YouTube can, in rare cases, get an account flagged.
-
----
-
-## Xtify vs Spotify & YouTube Music
-
-**What you gain**
-- **Free and ad-free**, with no Premium subscription needed.
-- **Background play and downloads without paying.** These are Premium-only features in the official apps.
-- A simple interface with nothing pushed at you.
-- Your data stays on your phone: history, playlists and downloads are stored locally.
-- Downloaded files are normal audio files with tags and cover art. You own them.
-
-**What you give up. Please read this.**
-- **It is not an official app.** It relies on YouTube's public pages. If YouTube changes something, songs can stop playing until the app's extractor is updated. Playback is sometimes slower to start than in the official apps.
-- **It may go against YouTube's Terms of Service.** It is a private, personal project. Use it at your own risk.
-- **Sound quality** is whatever YouTube provides, which is good but usually lower than Spotify's top setting.
-- **No lyrics, no podcasts, no sharing, no social features and no Chromecast.**
-- **Song catalogue is YouTube's.** Some songs have several versions (live, remix, lyric video), and the app can pick a different one than you expected.
-- **The server sleeps.** Search and recommendations use a free server that falls asleep when unused. The first request after a pause can take 30 to 60 seconds.
-- **Android only**, and the release APK is built for 64-bit ARM phones (almost every phone from the last several years).
-- **No cloud sync.** Uninstalling the app removes your playlists unless you back up its data.
-
-If you want the most reliable experience and are happy to pay, the official apps are the safer choice. Xtify is for people who want a free, simple, offline-friendly player and accept the trade-offs.
+**Everyday**
+- No ads.
+- No subscription bs.
+- Only songs.
 
 ---
 
 ## Install
 
-### Just want the app? Download the APK
+1. Download `xtify.apk` from the [Releases page](../../releases/latest).
+2. Open it on your phone and allow installs from your browser or file manager if asked.
 
-1. Open the [**Releases** page](../../releases/latest) and download the latest `app-release.apk`.
-2. Open the file on your phone. If Android asks, allow *Install unknown apps* for your browser or file manager.
-3. Open Xtify, tap the *Sign in* button at the bottom, and log in with your Google account.
-4. Search for a song and play it.
+Signing in to YouTube is optional (see below).
 
 ### Build it yourself
 
-You need [Flutter](https://docs.flutter.dev/get-started/install) (Dart 3.13 or newer), the Android SDK and a phone or emulator.
+Needs [Flutter](https://docs.flutter.dev/get-started/install) (Dart 3.13+) and the Android SDK.
 
 ```bash
 git clone https://github.com/xmokecursed/xtify.git
 cd xtify
 flutter pub get
-flutter run --release
+flutter run
 ```
 
-To make an APK:
+Search and recommendations go through [xtify-backend](https://github.com/xmokecursed/xtify-backend). The app uses a shared server by default; to use your own, change `_baseUrl` in `lib/services/api_service.dart`.
 
-```bash
-flutter build apk --release
-```
+---
 
-The file is at `build/app/outputs/flutter-apk/app-release.apk`.
+## YouTube sign-in (optional)
 
-**Server.** Xtify talks to a small search and recommendations server ([xtify-backend](https://github.com/xmokecursed/xtify-backend)). The app points to a shared one by default. To run your own, deploy the backend and change `_baseUrl` in `lib/services/api_service.dart`.
+Most songs play without it. YouTube sometimes refuses requests that don't look signed in (*"Sign in to confirm you're not a bot"*), and signing in fixes that.
+
+- You log in on a normal Google page inside the app. Xtify NEVER sees your password.
+- Only the session cookies are kept, in the app's private storage on your phone. They are NOT sent to Xtify's server.
+- If the login expires, a *Sign in again* notice will appear again.
+- Tip: use a secondary Google account. Automated-looking use can, *rarely, get an account flagged.
+
+---
+
+## Xtify vs Spotify & YouTube Music
+
+**Gains:** free and ad-free, background play and downloads without Premium, no clutter, and all your data stays on your phone as normal tagged audio files.
+
+**Trade-offs:**
+- Not an official app. It relies on YouTube, so songs can stop playing until the app is updated after a YouTube change. It goes against YouTube's Terms of Service; use it at your own risk.
+- Sound quality is whatever YouTube provides.
+- No lyrics, podcasts, sharing or Chromecast. The catalogue is YouTube's, so a song may come as a different version (live, remix) than you expected.
+- Android only (the release APK targets 64-bit ARM). No cloud sync.
 
 ---
 
 ## How it works
 
-```
-Phone (Xtify app) ──search / recommendations──▶ Xtify server ──▶ Last.fm + YouTube Music
-        │
-        └──audio link (your Google cookies, on the phone only)──▶ YouTube
-```
+[![Architecture diagram of xmokecursed/xtify](https://gitdiagram.com/xmokecursed/xtify/diagram.png)](https://gitdiagram.com/xmokecursed/xtify?utm_source=readme&utm_medium=picture)
 
-- The app is written in Flutter. It asks YouTube for each song's audio link directly, which takes a fraction of a second. If that ever fails, a yt-dlp runtime inside the app finds the link instead (slower, several seconds a song).
-- Recommendations come from Last.fm and YouTube Music's "up next" data.
-- Playback uses `just_audio` and `audio_service`, which gives lock-screen controls and background play.
+![diagram](docs/xtify-diagram.jpg)
 
 ---
 
 ## Troubleshooting
 
-| Problem | What to try |
+| Problem | Try |
 | --- | --- |
-| "Sign in to confirm you're not a bot" or songs not playing | Tap the *Sign in again* notice and log in again. |
-| First search is very slow | The server was asleep. Wait a minute and try again. |
-| Download fails | Check that you are online and that the download folder still exists (change it from Downloads → folder icon). **Rapid downloading of many songs may cause temporary ip-flagging by youtube.** |
-| Something is broken | Library tab → bug icon → *Copy debug info*, then send it with your report here. |
+| Songs not playing, or "not a bot" error | Sign in (or sign in again) from the strip above the player. |
+| First search is very slow | The server was asleep. Wait a minute. |
+| Download fails | Check you're online and the download folder still exists. Downloading many songs quickly can get your IP temporarily flagged by YouTube. |
+| Something else is broken | Library → bug icon → *Copy debug info*, and send it with your report. |
 
 ---
 
 ## Disclaimer
 
-Xtify is an independent personal project and is not affiliated with YouTube, Google, Spotify or Last.fm. It does not host any music. You are responsible for how you use it and for following the rules of the services it connects to. Please support the artists you love.
+Xtify is an independent personal project, not affiliated with YouTube, Google, Spotify or Last.fm. It hosts no music. You are responsible for how you use it. Please support the artists you love.
