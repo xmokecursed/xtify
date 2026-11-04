@@ -8,14 +8,13 @@ import '../models/track_model.dart';
 import '../theme/app_theme.dart';
 import 'favourite_button.dart';
 import 'playlist_sheets.dart';
+import 'signin_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
 import 'package:xtify_app/services/audio_service.dart';
 import 'package:xtify_app/services/auto_queue_settings.dart';
-import 'package:xtify_app/services/cookie_service.dart';
-import 'package:xtify_app/screens/youtube_login_screen.dart';
 import 'package:rxdart/rxdart.dart';
 
 const double _collapsedFraction = 0.11;
@@ -69,9 +68,10 @@ class _PlayerSheetState extends State<PlayerSheet> {
           },
           child: _sheet(context),
         ),
-        // Download progress card, floating just above the collapsed mini player.
+        // Download progress card and, while signed out, the sign-in strip, floating
+        // just above the collapsed mini player (the strip sits closest to it).
         // The collapsed sheet is _collapsedFraction of the height, so splitting
-        // the height in those proportions puts the card right on top of it.
+        // the height in those proportions puts them right on top of it.
         // (This used to measure the height with a LayoutBuilder. That made the
         // whole player rebuild during layout, and when anything inside such a
         // builder throws, everything under it stays broken.)
@@ -96,7 +96,14 @@ class _PlayerSheetState extends State<PlayerSheet> {
                             child: child,
                           ),
                         ),
-                        child: const DownloadBanner(),
+                        child: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            DownloadBanner(),
+                            SignInStrip(),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -111,110 +118,64 @@ class _PlayerSheetState extends State<PlayerSheet> {
   }
 
   Widget _sheet(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: CookieService.instance.signedInListener,
-      builder: (context, signedIn, child) {
-        return DraggableScrollableSheet(
-          controller: _ctl,
-          initialChildSize: _collapsedFraction,
-          minChildSize: _collapsedFraction,
-          maxChildSize: signedIn ? _expandedFraction : _collapsedFraction,
-          snap: signedIn,
-          snapSizes: signedIn ? [_collapsedFraction, _expandedFraction] : null,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF0C0C0C),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(AppRadius.sheet),
-                ),
-                border: const Border(
-                  top: BorderSide(color: AppColors.hairline),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    blurRadius: 24,
-                    offset: const Offset(0, -6),
-                  ),
-                ],
+    // The same signed in or out: songs play without a YouTube sign-in, so the player is never
+    // swapped for a sign-in prompt. Signing in stays on offer as the SignInStrip above it.
+    return DraggableScrollableSheet(
+      controller: _ctl,
+      initialChildSize: _collapsedFraction,
+      minChildSize: _collapsedFraction,
+      maxChildSize: _expandedFraction,
+      snap: true,
+      snapSizes: const [_collapsedFraction, _expandedFraction],
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0C0C0C),
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(AppRadius.sheet),
+            ),
+            border: const Border(
+              top: BorderSide(color: AppColors.hairline),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.6),
+                blurRadius: 24,
+                offset: const Offset(0, -6),
               ),
-              child: ListView(
-                controller: scrollController,
-                padding: EdgeInsets.zero,
-                children: [
-                  // drag handle
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8, bottom: 6),
-                    child: Center(
-                      child: Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.22),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
+            ],
+          ),
+          child: ListView(
+            controller: scrollController,
+            padding: EdgeInsets.zero,
+            children: [
+              // drag handle
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 6),
+                child: Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  // Mini player (always visible); tap to open
-                  _buildHeader(context, signedIn),
-                  // Expanded content
-                  if (signedIn) _buildExpandedContent(context),
-                ],
+                ),
               ),
-            );
-          },
+              // Mini player (always visible); tap to open
+              _buildHeader(context),
+              // Expanded content
+              _buildExpandedContent(context),
+            ],
+          ),
         );
       },
     );
   }
 
-  Widget _buildHeader(BuildContext context, bool signedIn) {
-    if (!signedIn) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen, vertical: 8),
-        child: Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Sign in to YouTube to play music',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            FilledButton(
-              onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                final ok = await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute<bool>(
-                    builder: (_) => const YoutubeLoginScreen(),
-                  ),
-                );
-                if (ok == true) {
-                  messenger.showSnackBar(
-                    const SnackBar(content: Text('Signed in to YouTube')),
-                  );
-                }
-              },
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              ),
-              child: const Text('Sign in'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Signed in: current track or "Nothing playing".
+  Widget _buildHeader(BuildContext context) {
+    // The current track, or "Nothing playing" (signed in to YouTube or not).
     // Two plain StreamBuilders on the handler's own streams. This used to build
     // a fresh Rx.combineLatest2(...) inside build(): that stream can only be
     // listened to once, and the sheet's ListView re-creates a child from the
