@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// The last searches, most recent first.
 class SearchHistoryService {
   SearchHistoryService._();
   static final SearchHistoryService instance = SearchHistoryService._();

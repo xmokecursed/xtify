@@ -3,7 +3,6 @@ import '../screens/youtube_login_screen.dart';
 import '../services/cookie_service.dart';
 import '../theme/app_theme.dart';
 
-/// Slim strip at the top of the app: "Your YouTube sign-in expired. Sign in again".
 class SignInAgainBanner extends StatelessWidget {
   const SignInAgainBanner({super.key});
 
@@ -65,12 +64,6 @@ class SignInAgainBanner extends StatelessWidget {
   }
 }
 
-/// Slim card that floats just above the mini player while nobody is signed in to YouTube.
-///
-/// Songs play without a sign-in, but YouTube refuses some requests that do not look like a
-/// signed-in person ("Sign in to confirm you're not a bot"). So signing in stays on offer, as
-/// this strip, and never takes the place of the player. It goes away by itself once the sign-in
-/// is saved, and the player sheet hides it while the player is pulled up.
 class SignInStrip extends StatelessWidget {
   const SignInStrip({super.key});
 
@@ -100,7 +93,6 @@ class SignInStrip extends StatelessWidget {
         child: signedIn
             ? const SizedBox(width: double.infinity)
             : Padding(
-                // the gap to whatever floats above it (the download card)
                 padding: const EdgeInsets.only(top: 8),
                 child: Material(
                   color: AppColors.card,

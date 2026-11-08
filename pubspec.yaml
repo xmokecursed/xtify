@@ -1,7 +1,7 @@
 name: xtify_app
 description: "A new Flutter project."
 
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: 'none'
 
 version: 1.0.0+1
 
@@ -47,7 +47,6 @@ flutter_launcher_icons:
   adaptive_icon_background: "#000000"
   adaptive_icon_foreground: "assets/icon/xtify-logo-square.png"
   
-# The following section is specific to Flutter packages.
 flutter:
   uses-material-design: true
   assets:

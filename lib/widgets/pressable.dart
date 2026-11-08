@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Wraps any widget with a soft "press in" animation and an optional tick.
 class Pressable extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
@@ -9,7 +8,6 @@ class Pressable extends StatefulWidget {
   final double scale;
   final bool haptic;
 
-  /// Taps closer together than this are ignored (stops double pushes and spam).
   final Duration debounce;
 
   const Pressable({

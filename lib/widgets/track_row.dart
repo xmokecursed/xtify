@@ -9,7 +9,6 @@ import 'media_tile.dart';
 import 'play_helper.dart';
 import 'playlist_sheets.dart';
 
-/// Full-width song row: art, title/artist, duration, heart and a more menu.
 class TrackRow extends StatelessWidget {
   final Track track;
   final VoidCallback? onTap;
@@ -17,8 +16,6 @@ class TrackRow extends StatelessWidget {
   final bool showDownload;
   final bool showMore;
 
-  /// The search text this song was found with (search results), so that the "same artist" auto
-  /// queue can follow the artist the user looked for.
   final String? searchedFor;
 
   const TrackRow({
@@ -33,7 +30,6 @@ class TrackRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // offline and not downloaded: shown dimmed, tapping explains why it cannot play
     return ListenableBuilder(
       listenable: Listenable.merge(
           [ConnectivityService.instance.online, DownloadService.instance.items]),

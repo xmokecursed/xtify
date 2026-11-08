@@ -26,7 +26,6 @@ class _YoutubeLoginScreenState extends State<YoutubeLoginScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // AppBar with close button
             AppBar(
               backgroundColor: Colors.black,
               leading: IconButton(
@@ -80,14 +79,13 @@ class _YoutubeLoginScreenState extends State<YoutubeLoginScreen> {
     final uri = Uri.tryParse(url?.toString() ?? '');
     if (uri == null) return;
 
-    // Mobile user agent lands on m.youtube.com, not www.youtube.com
     final host = uri.host;
     final isYouTube = host == 'youtube.com' || host.endsWith('.youtube.com');
     if (!isYouTube) return;
 
     if (!await _cookieService.hasAuthCookieInWebView()) return;
 
-    _hasSavedCookies = true; // set first so both callbacks don't save twice
+    _hasSavedCookies = true;
     try {
       await _cookieService.saveFromWebView();
     } catch (e) {

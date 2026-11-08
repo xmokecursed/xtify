@@ -9,8 +9,6 @@ import 'download_service.dart';
 import 'history_service.dart';
 import 'audio_service.dart';
 
-/// Keeps the last log lines and uncaught errors in memory so they can be copied
-/// from the Library tab and pasted into a bug report.
 class DebugLog {
   DebugLog._();
   static const int _max = 400;
@@ -23,11 +21,6 @@ class DebugLog {
       original(message == null ? null : _color(message), wrapWidth: wrapWidth);
     };
     final previousOnError = FlutterError.onError;
-    // Flutter prints a full report only for the very first error of a run and a
-    // one-line summary for every later one, which is exactly how the details of
-    // the error that mattered got lost. So the first error of each KIND is
-    // printed in full (and kept in full in the copied debug info); repeats of
-    // the same kind stay one line.
     final seen = <String>{};
     FlutterError.onError = (details) {
       final first = seen.add(_kindOf(details));
@@ -44,12 +37,10 @@ class DebugLog {
     };
     PlatformDispatcher.instance.onError = (error, stack) {
       add('UNCAUGHT: $error\n${_trim(stack)}');
-      return false; // still reported as usual
+      return false;
     };
   }
 
-  // Colours for the terminal only (the copied debug info stays plain text):
-  // red = failures, yellow = retries and waiting, green = things that worked.
   static final RegExp _bad = RegExp(
       r'fail|error|exception|uncaught|could not|crash|403', caseSensitive: false);
   static final RegExp _warn = RegExp(
@@ -72,7 +63,6 @@ class DebugLog {
     final id = _videoId.firstMatch(m);
     var body = m;
     if (id != null) {
-      // the video id in cyan, so one song's lines are easy to follow
       body = '\x1B[36m${id[0]}$reset${code ?? ''}${m.substring(id.end)}';
     } else if (code != null) {
       body = '$code$m';
@@ -85,8 +75,6 @@ class DebugLog {
   static String _trim(StackTrace? s) =>
       (s?.toString() ?? '').split('\n').take(8).join('\n');
 
-  /// Errors that only differ in numbers (sizes, animation values, line numbers)
-  /// count as the same kind.
   static String _kindOf(FlutterErrorDetails d) {
     final firstLine = d.exceptionAsString().split('\n').first;
     return '${d.library}|${firstLine.replaceAll(RegExp(r'[0-9][0-9.,e+-]*'), '#')}';
@@ -100,7 +88,6 @@ class DebugLog {
     }
   }
 
-  /// Takes out anything private: cookie values, signed stream links, tokens.
   static String _clean(String m) {
     var s = m;
     s = s.replaceAllMapped(RegExp(r'(https?://[^\s?]+)\?\S{20,}'), (x) => '${x[1]}?…');
@@ -110,7 +97,6 @@ class DebugLog {
     return s.length > 600 ? '${s.substring(0, 600)}…' : s;
   }
 
-  /// Everything worth sending along with a bug report.
   static String report() {
     final h = XtifyAudioHandler.instance;
     final ps = h.playbackState.value;

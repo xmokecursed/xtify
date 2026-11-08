@@ -33,7 +33,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     super.dispose();
   }
 
-  /// The songs after the filter and sort. Custom order (no filter) is the playlist itself.
   List<Track> _shown(List<Track> all) {
     final q = _query.trim().toLowerCase();
     var list = q.isEmpty
@@ -46,7 +45,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       case _Sort.custom:
         break;
       case _Sort.recent:
-        list = list.reversed.toList(); // songs are added at the end
+        list = list.reversed.toList();
       case _Sort.title:
         list.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
       case _Sort.artist:
@@ -122,7 +121,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           return Dismissible(
             key: ValueKey('${p.id}-${t.id}'),
             direction: DismissDirection.endToStart,
-            // in Downloads, swiping also deletes the saved file
             onDismissed: (_) {
               if (isDownloads) {
                 DownloadService.instance.remove(t.id);
@@ -130,7 +128,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               }
               final at = p.tracks.indexWhere((x) => x.id == t.id);
               PlaylistService.instance.removeTrack(p.id, t.id);
-              // the saved file of a download cannot come back, so no Undo there
               final m = ScaffoldMessenger.of(context);
               m.hideCurrentSnackBar();
               m.showSnackBar(SnackBar(

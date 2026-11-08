@@ -1,7 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- just_audio proxies requests that carry custom headers through a local
-     HTTP server on this device. Allow plain HTTP to loopback only; all other
-     traffic stays HTTPS-only. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">

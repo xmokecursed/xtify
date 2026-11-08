@@ -9,8 +9,6 @@ import 'auto_queue_service.dart';
 import 'history_service.dart';
 import 'track_lookup.dart';
 
-/// Home-screen feeds: "Made for you" (from play history) and trending songs.
-/// Both are cached on the phone so they show instantly on the next launch.
 class FeedService {
   FeedService._();
   static final FeedService instance = FeedService._();
@@ -67,14 +65,11 @@ class FeedService {
     );
   }
 
-  /// Refreshes both feeds one after the other (each song needs a backend search,
-  /// so doing both at once would hammer the server).
   Future<void> refreshAll({bool force = false}) async {
     await refreshTrending(force: force);
     await ArtistMixService.instance.refresh(force: force);
   }
 
-  /// Global Last.fm chart, turned into playable songs.
   Future<void> refreshTrending({bool force = false}) async {
     if (loadingTrending.value) return;
     if (!force && _fresh(_trendAt) && trending.value.isNotEmpty) return;
@@ -100,7 +95,6 @@ class FeedService {
     }
   }
 
-  /// Songs similar to what the user played recently.
   Future<void> refreshMadeForYou({bool force = false}) async {
     final history = HistoryService.instance.tracks.value;
     if (history.isEmpty) {
@@ -146,7 +140,6 @@ class FeedService {
         }
       }
 
-      // Mix the sources so one artist doesn't dominate, skip songs already played.
       final queries = <TrackQuery>[];
       final seen = <String>{...playedKeys};
       for (var i = 0; queries.length < 20; i++) {

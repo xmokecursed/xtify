@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-/// Big title at the top of a tab.
 class ScreenHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
 
-  /// Shows the Xtify logo before the title (used on Home).
   final bool showLogo;
 
-  /// Widget at the right end of the title row (for example an icon button).
   final Widget? trailing;
 
   const ScreenHeader({
@@ -63,7 +60,6 @@ class ScreenHeader extends StatelessWidget {
   }
 }
 
-/// Section title with optional subtitle and a trailing widget.
 class SectionHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -109,7 +105,6 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
-/// One section of a tab: header plus content, with consistent spacing.
 class SectionSliver extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -143,7 +138,6 @@ class SectionSliver extends StatelessWidget {
   }
 }
 
-/// Horizontal list whose first and last item line up with the screen padding.
 class HList extends StatelessWidget {
   final double height;
   final int itemCount;
@@ -171,7 +165,6 @@ class HList extends StatelessWidget {
   }
 }
 
-/// Centered gray message (or spinner) for empty sections.
 class EmptyHint extends StatelessWidget {
   final String text;
   final bool loading;
@@ -204,7 +197,6 @@ class EmptyHint extends StatelessWidget {
 }
 
 
-/// The round Xtify logo.
 class XtifyLogo extends StatelessWidget {
   final double size;
   const XtifyLogo({super.key, this.size = 36});
@@ -233,7 +225,6 @@ class XtifyLogo extends StatelessWidget {
   }
 }
 
-/// Fades its child in with a small upward slide, once, when it first appears.
 class FadeSlideIn extends StatelessWidget {
   final Widget child;
   final Duration duration;

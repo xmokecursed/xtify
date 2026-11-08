@@ -9,8 +9,6 @@ class TrackQuery {
   String get key => '${artist.toLowerCase()}|${name.toLowerCase()}';
 }
 
-/// Turns "artist + song name" (Last.fm data, no video id) into a playable
-/// YouTube track through the backend search.
 class TrackLookup {
   static final RegExp _junk = RegExp(
     r'\b(cover|karaoke|reaction|tutorial|nightcore|slowed|sped up|8d)\b',
@@ -44,8 +42,6 @@ class TrackLookup {
     }
   }
 
-  /// Resolves [queries] a few at a time and stops after [max] hits.
-  /// [onProgress] receives the list found so far.
   static Future<List<Track>> resolveAll(
     List<TrackQuery> queries, {
     int max = 10,

@@ -9,16 +9,12 @@ class CookieRefreshService {
   static final CookieRefreshService instance = CookieRefreshService._();
 
   static const String _lastKey = 'yt_cookies_last_refresh';
-  // Must match the userAgent in youtube_login_screen.dart (line 55-56),
-  // so Google sees the same "device" that signed in.
   static const String _userAgent =
       'Mozilla/5.0 (Linux; Android 12; SM-G998N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36';
 
   bool _running = false;
   DateTime _lastAttempt = DateTime.fromMillisecondsSinceEpoch(0);
 
-  /// Refreshes only if the last successful refresh is older than [maxAge].
-  /// Never throws; safe to call without await.
   Future<void> refreshIfOlderThan(Duration maxAge) async {
     try {
       if (_running) return;
@@ -51,13 +47,11 @@ class CookieRefreshService {
       );
       await web.run();
       await loaded.future.timeout(const Duration(seconds: 25));
-      // Give the page's own scripts time to rotate the session cookies.
       await Future.delayed(const Duration(seconds: 6));
 
-      // Never overwrite a good file with logged-out cookies.
       if (!await CookieService.instance.hasAuthCookieInWebView()) {
         debugPrint('Cookie refresh: WebView has no auth cookie; keeping old file');
-        CookieService.instance.markExpired(); // the session ended: ask the user to sign in again
+        CookieService.instance.markExpired();
         return;
       }
       await CookieService.instance.saveFromWebView();

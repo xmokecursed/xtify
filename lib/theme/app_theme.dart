@@ -9,7 +9,6 @@ class AppColors {
   static const Color textSecondary = Color(0xFF9A9AA0);
   static const Color textTertiary = Color(0xFF636368);
 
-  /// Barely-there white used for hairlines and pressed states.
   static const Color hairline = Color(0x1FFFFFFF);
   static const Color highlight = Color(0x14FFFFFF);
 }
@@ -27,13 +26,10 @@ class AppMotion {
 }
 
 class AppSpacing {
-  /// Left and right padding on every screen.
   static const double screen = 20;
 
-  /// Vertical gap between sections.
   static const double section = 28;
 
-  /// Gap between items in a row.
   static const double gap = 14;
 }
 

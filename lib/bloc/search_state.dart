@@ -14,7 +14,7 @@ class SearchLoading extends SearchState {}
 class SearchSuccess extends SearchState {
   final List<Track> tracks;
   final String query;
-  final int limit; // how many results were requested from the backend
+  final int limit;
   final bool hasMore;
   final bool loadingMore;
 

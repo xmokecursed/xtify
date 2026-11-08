@@ -124,7 +124,6 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
-/// "Load more" button (or spinner) under the song list.
 class _LoadMoreFooter extends StatelessWidget {
   final SearchSuccess state;
   const _LoadMoreFooter({required this.state});
@@ -152,7 +151,6 @@ class _LoadMoreFooter extends StatelessWidget {
   }
 }
 
-/// The user's own playlists that match the search.
 class _PlaylistResults extends StatelessWidget {
   final String query;
   const _PlaylistResults({required this.query});
@@ -227,7 +225,7 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
   FocusNode get _focus => widget.focusNode;
 
   void _onChanged() {
-    if (mounted) setState(() {}); // show/hide the X, focus outline
+    if (mounted) setState(() {});
   }
 
   @override
@@ -253,7 +251,7 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
   void _clear() {
     _controller.clear();
     widget.onSearchCleared?.call();
-    _focus.requestFocus(); // keep the keyboard open for a new query
+    _focus.requestFocus();
   }
 
   @override

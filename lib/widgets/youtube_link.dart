@@ -6,7 +6,6 @@ import '../theme/app_theme.dart';
 
 String youtubeUrl(Track t) => 'https://www.youtube.com/watch?v=${t.id}';
 
-/// Shows the original YouTube link of a song, with Copy and Open buttons.
 Future<void> showYoutubeLink(BuildContext context, Track track) {
   final messenger = ScaffoldMessenger.of(context);
   final url = youtubeUrl(track);

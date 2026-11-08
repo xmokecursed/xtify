@@ -24,8 +24,6 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final feed = FeedService.instance;
     return RefreshIndicator(
-      // The lists reload in the background (each section shows its own spinner).
-      // Waiting for them here kept the pull-down spinner going for minutes.
       onRefresh: () async {
         unawaited(feed.refreshAll(force: true).catchError((Object e) {
           debugPrint('home refresh failed: $e');
@@ -39,7 +37,6 @@ class HomeScreen extends StatelessWidget {
         slivers: [
           const SliverToBoxAdapter(child: ScreenHeader(title: 'Xtify', showLogo: true)),
           const SliverToBoxAdapter(child: OfflineBanner()),
-          // offline: what can still play comes first, the web-based lists are hidden
           if (!online)
             SectionSliver(
               title: 'Downloaded songs',
@@ -98,7 +95,6 @@ class HomeScreen extends StatelessWidget {
             child: ValueListenableBuilder<List<Playlist>>(
               valueListenable: PlaylistService.instance.playlists,
               builder: (context, all, _) {
-                // Favourites and Downloads only show up once they have a song in them
                 final lists = all
                     .where((p) =>
                         (p.id != PlaylistService.favouritesId &&
@@ -159,7 +155,6 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-/// Small spinner in a section header while that section is reloading.
 class _BusyDot extends StatelessWidget {
   final ValueListenable<bool> listenable;
   const _BusyDot({required this.listenable});

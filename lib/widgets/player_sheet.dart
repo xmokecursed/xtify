@@ -19,7 +19,6 @@ import 'package:rxdart/rxdart.dart';
 
 const double _collapsedFraction = 0.11;
 const double _expandedFraction = 0.70;
-// _collapsedFraction as a percentage, to split the height by flex (see build)
 const int _collapsedPercent = 11;
 
 class PlayerSheet extends StatefulWidget {
@@ -30,14 +29,9 @@ class PlayerSheet extends StatefulWidget {
 }
 
 class _PlayerSheetState extends State<PlayerSheet> {
-  // How far the sheet is pulled up; the download banner hides when it is open.
   final ValueNotifier<double> _extent = ValueNotifier<double>(_collapsedFraction);
   final DraggableScrollableController _ctl = DraggableScrollableController();
 
-  // One position stream for both progress displays, made once. Asking
-  // AudioService.position again on every rebuild can hand out a new stream each
-  // time, which means re-subscribing (and restarting its timer) whenever the
-  // sheet rebuilds.
   late final Stream<Duration> _position = AudioService.position;
 
   @override
@@ -68,13 +62,6 @@ class _PlayerSheetState extends State<PlayerSheet> {
           },
           child: _sheet(context),
         ),
-        // Download progress card and, while signed out, the sign-in strip, floating
-        // just above the collapsed mini player (the strip sits closest to it).
-        // The collapsed sheet is _collapsedFraction of the height, so splitting
-        // the height in those proportions puts them right on top of it.
-        // (This used to measure the height with a LayoutBuilder. That made the
-        // whole player rebuild during layout, and when anything inside such a
-        // builder throws, everything under it stays broken.)
         Positioned.fill(
           child: Column(
             children: [
@@ -118,8 +105,6 @@ class _PlayerSheetState extends State<PlayerSheet> {
   }
 
   Widget _sheet(BuildContext context) {
-    // The same signed in or out: songs play without a YouTube sign-in, so the player is never
-    // swapped for a sign-in prompt. Signing in stays on offer as the SignInStrip above it.
     return DraggableScrollableSheet(
       controller: _ctl,
       initialChildSize: _collapsedFraction,
@@ -149,7 +134,6 @@ class _PlayerSheetState extends State<PlayerSheet> {
             controller: scrollController,
             padding: EdgeInsets.zero,
             children: [
-              // drag handle
               Padding(
                 padding: const EdgeInsets.only(top: 8, bottom: 6),
                 child: Center(
@@ -163,9 +147,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   ),
                 ),
               ),
-              // Mini player (always visible); tap to open
               _buildHeader(context),
-              // Expanded content
               _buildExpandedContent(context),
             ],
           ),
@@ -175,12 +157,6 @@ class _PlayerSheetState extends State<PlayerSheet> {
   }
 
   Widget _buildHeader(BuildContext context) {
-    // The current track, or "Nothing playing" (signed in to YouTube or not).
-    // Two plain StreamBuilders on the handler's own streams. This used to build
-    // a fresh Rx.combineLatest2(...) inside build(): that stream can only be
-    // listened to once, and the sheet's ListView re-creates a child from the
-    // same widget when it was dropped, so the second listen threw "Stream has
-    // already been listened to".
     final h = XtifyAudioHandler.instance;
     return StreamBuilder<MediaItem?>(
       stream: h.mediaItem,
@@ -273,15 +249,11 @@ class _PlayerSheetState extends State<PlayerSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Large art, always square and centered
           StreamBuilder<MediaItem?>(
             stream: XtifyAudioHandler.instance.mediaItem,
             builder: (context, snapshot) {
               final mediaItem = snapshot.data;
               final url = mediaItem?.artUri?.toString() ?? '';
-              // As wide as the screen allows inside the side padding, up to
-              // 300. Read from MediaQuery instead of a LayoutBuilder so this
-              // is built with the rest of the sheet, not during layout.
               final side = math.max(
                   0.0,
                   math.min(MediaQuery.sizeOf(context).width - 2 * AppSpacing.screen,
@@ -313,7 +285,6 @@ class _PlayerSheetState extends State<PlayerSheet> {
             },
           ),
           const SizedBox(height: 24),
-          // Title and artist
           StreamBuilder<MediaItem?>(
             stream: XtifyAudioHandler.instance.mediaItem,
             builder: (context, snapshot) {
@@ -351,7 +322,6 @@ class _PlayerSheetState extends State<PlayerSheet> {
             },
           ),
           const SizedBox(height: 16),
-          // Progress bar
           StreamBuilder<Duration>(
             stream: _position,
             builder: (context, positionSnapshot) {
@@ -388,13 +358,10 @@ class _PlayerSheetState extends State<PlayerSheet> {
             },
           ),
           const SizedBox(height: 8),
-          // Main controls: shuffle / previous / play / next / repeat
           const _MainControls(),
           const SizedBox(height: 16),
-          // Secondary actions: favourite / download / playlist / queue / YouTube
           const _ActionRow(),
           const SizedBox(height: 28),
-          // Up next, with the auto queue setting (gear) at the right
           const Row(
             children: [
               Expanded(
@@ -510,7 +477,6 @@ class _PlayerSheetState extends State<PlayerSheet> {
   }
 }
 
-/// Round white play/pause button with an animated icon swap.
 class _PlayPauseButton extends StatelessWidget {
   final bool playing;
   final double size;
@@ -551,7 +517,6 @@ class _PlayPauseButton extends StatelessWidget {
   }
 }
 
-/// Thin progress line under the mini player.
 class _MiniProgress extends StatelessWidget {
   final Duration? duration;
   final Stream<Duration> position;
@@ -579,7 +544,6 @@ class _MiniProgress extends StatelessWidget {
   }
 }
 
-/// Shuffle, previous, play/pause, next and repeat: five evenly spaced slots.
 class _MainControls extends StatelessWidget {
   const _MainControls();
 
@@ -642,7 +606,6 @@ class _MainControls extends StatelessWidget {
   }
 }
 
-/// Toggle icon: bright with a dot underneath when on, dim when off.
 class _ModeButton extends StatelessWidget {
   final IconData icon;
   final bool active;
@@ -696,7 +659,6 @@ class _ModeButton extends StatelessWidget {
   }
 }
 
-/// Favourite, download, add to playlist, queue and the YouTube link.
 class _ActionRow extends StatelessWidget {
   const _ActionRow();
 
@@ -760,7 +722,6 @@ class _ActionRow extends StatelessWidget {
   }
 }
 
-/// The auto queue setting, at the right of "Up next". Brighter while "same artist" is on.
 class _AutoQueueGear extends StatelessWidget {
   const _AutoQueueGear();
 
@@ -789,8 +750,6 @@ class _AutoQueueGear extends StatelessWidget {
   }
 }
 
-/// Under "Up next" while "same artist" is on: whose songs the auto queue plays, or a hint when
-/// it could not do that.
 class _AutoQueueNotice extends StatelessWidget {
   const _AutoQueueNotice();
 
@@ -842,8 +801,6 @@ class _AutoQueueNotice extends StatelessWidget {
   }
 }
 
-/// The auto queue setting: similar songs (YouTube Music's own suggestions, the default) or
-/// only songs by one artist.
 Future<void> showAutoQueueSheet(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
@@ -864,7 +821,6 @@ class _AutoQueueSheet extends StatelessWidget {
       builder: (context, _) {
         final mode = s.mode.value;
         final focus = s.focus.value;
-        // whose songs play, once that is known
         final artist = mode == AutoQueueMode.sameArtist && focus != null && !focus.needsCheck
             ? focus.name
             : null;
@@ -905,7 +861,6 @@ class _AutoQueueSheet extends StatelessWidget {
   }
 }
 
-/// One choice in the auto queue sheet: a card with a check on the chosen one.
 class _ModeTile extends StatelessWidget {
   final String title;
   final String subtitle;

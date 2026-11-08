@@ -7,7 +7,6 @@ import 'media_tile.dart';
 import 'play_helper.dart';
 import 'playlist_sheets.dart';
 
-/// Horizontal row of song tiles with loading / empty states.
 class TrackCarousel extends StatelessWidget {
   final List<Track> tracks;
   final bool loading;

@@ -11,7 +11,7 @@ part 'search_event.dart';
 part 'search_state.dart';
 
 class SearchBloc extends Bloc<SearchEvent, SearchState> {
-  static const int _firstLimit = 25; // ~15-20 left after filtering
+  static const int _firstLimit = 25;
   static const int _step = 20;
   static const int _maxLimit = 50;
 
@@ -41,9 +41,6 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
         limit: _firstLimit,
         hasMore: tracks.isNotEmpty,
       ));
-      // Look up the first few ahead of the tap. The direct lookup is cheap and runs in
-      // parallel; with yt-dlp only the first one actually starts (one lookup at a time), and
-      // the first one also falls back to yt-dlp when the direct lookup does not work out.
       var first = true;
       for (final t in tracks.where((t) => t.isPlayable).take(3)) {
         AudioUrlResolver.prefetch(t.id, ytDlpFallback: first);
@@ -66,7 +63,6 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
     try {
       final tracks = await ApiService.searchTracks(current.query, limit: newLimit);
       final latest = state;
-      // The user searched for something else meanwhile: drop this batch.
       if (latest is! SearchSuccess || latest.query != current.query) return;
 
       final merged = <Track>[...current.tracks];
@@ -84,7 +80,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
     } catch (_) {
       final latest = state;
       if (latest is SearchSuccess && latest.query == current.query) {
-        emit(latest.copyWith(loadingMore: false)); // keep results, allow retry
+        emit(latest.copyWith(loadingMore: false));
       }
     }
   }

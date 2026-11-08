@@ -4,7 +4,6 @@ import '../models/playlist_model.dart';
 import '../models/track_model.dart';
 import '../services/playlist_service.dart';
 
-/// Heart that adds/removes a song from the Favourites playlist.
 class FavouriteButton extends StatelessWidget {
   final Track track;
   final double size;

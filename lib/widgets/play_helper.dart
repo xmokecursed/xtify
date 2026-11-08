@@ -7,18 +7,13 @@ import '../services/cookie_service.dart';
 import '../services/download_service.dart';
 import 'loading_track_card.dart';
 
-/// False when the phone is offline and the song is not downloaded.
 bool playableNow(Track t) =>
     ConnectivityService.instance.online.value || DownloadService.instance.isDownloaded(t.id);
 
-/// Plays [track] and keeps the user informed (preparing / error + retry).
 final Set<String> _loadingIds = {};
 
-/// [searchedFor] is the search text the song was picked from, if any: the "same artist" auto
-/// queue follows that artist when the song is credited to them.
 Future<void> playTrackWithFeedback(BuildContext context, Track track,
     {String? searchedFor}) async {
-  // the same song is already loading: extra taps do nothing
   if (!_loadingIds.add(track.id)) return;
   try {
     await _playWithFeedback(context, track, searchedFor);
@@ -40,7 +35,7 @@ Future<void> _playWithFeedback(BuildContext context, Track track, String? search
     SnackBar(
       padding: EdgeInsets.zero,
       content: LoadingTrackCard(track: track),
-      duration: const Duration(minutes: 2), // hidden as soon as playback starts or fails
+      duration: const Duration(minutes: 2),
     ),
   );
 

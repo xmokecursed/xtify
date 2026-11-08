@@ -26,8 +26,7 @@ import 'package:xtify_app/widgets/signin_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  DebugLog.install(); // keeps recent logs and errors for "Copy debug info"
-  // Keep decoded thumbnails in RAM small
+  DebugLog.install();
   PaintingBinding.instance.imageCache.maximumSize = 120;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 60 << 20;
   
@@ -38,41 +37,36 @@ void main() async {
   
   try {
     await _setupAudioService();
-    // Initialize cookie service
     await CookieService.instance.init();
     await ConnectivityService.instance.init();
     await AudioUrlResolver.loadPreferred();
-    await AutoQueueSettings.instance.init(); // similar songs / same artist
+    await AutoQueueSettings.instance.init();
     await HistoryService.instance.init();
     await ArtistMixService.instance.init();
     await PlaylistService.instance.init();
-    await DownloadService.instance.init(); // after playlists: keeps Downloads in step
+    await DownloadService.instance.init();
     await SearchHistoryService.instance.init();
-    await FeedService.instance.init(); // cached lists, instant on screen
-    await XtifyAudioHandler.instance.restoreLast(); // last song, paused where you left off
+    await FeedService.instance.init();
+    await XtifyAudioHandler.instance.restoreLast();
   } catch (e) {
     debugPrint('Setup error: $e');
     rethrow;
   }
   runApp(const XtifyApp());
-  // Initialize extractor in background (don't await)
   AudioUrlResolver.ensureInitialized()
-      .then((_) => AudioUrlResolver.ensureModern()) // a new enough yt-dlp before the first song
+      .then((_) => AudioUrlResolver.ensureModern())
       .catchError((e) {
     debugPrint('Extractor init error (will retry on first use): $e');
   });
-  // Refresh home feeds in the background (cached for 6 hours)
   if (ConnectivityService.instance.online.value) {
-    FeedService.instance.refreshAll(); // one after the other, to go easy on the server
+    FeedService.instance.refreshAll();
   }
-  // back online: reload the lists once
   var wasOnline = ConnectivityService.instance.online.value;
   ConnectivityService.instance.online.addListener(() {
     final now = ConnectivityService.instance.online.value;
     if (now && !wasOnline) FeedService.instance.refreshAll();
     wasOnline = now;
   });
-  // Check for yt-dlp updates in background (don't await)
   Future.delayed(const Duration(minutes: 3), YtDlpUpdateService.checkAndUpdate);
   Future.delayed(const Duration(minutes: 1), () => CookieRefreshService.instance.refreshIfOlderThan(const Duration(hours: 12)));
 }
@@ -135,10 +129,8 @@ class _XtifyHomeState extends State<XtifyHome>
     return Scaffold(
       body: Stack(
         children: [
-          // Main content
           SafeArea(
             bottom: false,
-            // IndexedStack keeps every tab's scroll position and search results
             child: Column(
               children: [
                 const SignInAgainBanner(),
@@ -154,7 +146,6 @@ class _XtifyHomeState extends State<XtifyHome>
               ],
             ),
           ),
-          // Player sheet at the bottom
           PlayerSheet(),
         ],
       ),

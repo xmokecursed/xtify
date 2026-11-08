@@ -12,13 +12,12 @@ import '../models/track_model.dart';
 import 'audio_url_resolver.dart';
 import 'playlist_service.dart';
 
-/// A song that is saved on the phone.
 class DownloadedItem {
   final Track track;
   final String path;
   final int bytes;
   final int atMs;
-  final String coverPath; // cover image saved on the phone, '' when there is none
+  final String coverPath;
 
   const DownloadedItem({
     required this.track,
@@ -53,11 +52,10 @@ class DownloadedItem {
 
 enum DownloadStatus { queued, active, failed }
 
-/// A download that is waiting, running or has failed.
 class DownloadTask {
   final Track track;
   final DownloadStatus status;
-  final double progress; // 0..1, only meaningful while active
+  final double progress;
   final String? error;
 
   const DownloadTask(this.track,
@@ -70,43 +68,33 @@ class DownloadTask {
           error: error);
 }
 
-/// A finished (or failed) download, for the "Saved" / "Failed" banner.
 class DownloadEvent {
   final Track track;
   final bool ok;
-  final int seq; // changes on every event so the same song can fire twice
+  final int seq;
   const DownloadEvent(this.track, this.ok, this.seq);
 }
 
 class _Cancelled implements Exception {}
 
-/// Saves songs as audio files and keeps the built-in "Downloads" playlist in step.
-///
-/// Files go to the app's own folder unless the user picks another one. Songs that
-/// were already downloaded stay where they were if the folder is changed later.
 class DownloadService {
   DownloadService._();
   static final DownloadService instance = DownloadService._();
 
   static const String _dirKey = 'download_dir_v1';
-  static const int _chunk = 2 * 1024 * 1024; // YouTube throttles one big request
+  static const int _chunk = 2 * 1024 * 1024;
 
-  /// trackId -> saved song.
   final ValueNotifier<Map<String, DownloadedItem>> items =
       ValueNotifier<Map<String, DownloadedItem>>(const {});
 
-  /// trackId -> waiting / running / failed download.
   final ValueNotifier<Map<String, DownloadTask>> tasks =
       ValueNotifier<Map<String, DownloadTask>>(const {});
 
-  /// The latest finished or failed download.
   final ValueNotifier<DownloadEvent?> lastEvent = ValueNotifier<DownloadEvent?>(null);
   int _eventSeq = 0;
 
-  /// Folder new downloads go to (for showing in the UI).
   final ValueNotifier<String> folder = ValueNotifier<String>('');
 
-  /// True while the user has chosen their own folder.
   final ValueNotifier<bool> customFolder = ValueNotifier<bool>(false);
 
   late Directory _support;
@@ -115,8 +103,8 @@ class DownloadService {
   final List<String> _queue = [];
   final Set<String> _cancelled = {};
   bool _working = false;
-  final Map<String, String> _coverByUrl = {}; // imageUrl -> local cover file
-  final Map<String, String> _coverById = {}; // video id -> local cover file
+  final Map<String, String> _coverByUrl = {};
+  final Map<String, String> _coverById = {};
 
   Future<void> init() async {
     _support = await getApplicationSupportDirectory();
@@ -131,7 +119,6 @@ class DownloadService {
         final out = <String, DownloadedItem>{};
         for (final e in json.decode(await _file!.readAsString()) as List<dynamic>) {
           final it = DownloadedItem.fromJson(e as Map<String, dynamic>);
-          // files deleted outside the app are dropped
           if (it != null && File(it.path).existsSync()) out[it.track.id] = it;
         }
         items.value = out;
@@ -155,10 +142,8 @@ class DownloadService {
     }
   }
 
-  /// Local cover file for a picture URL of a downloaded song, or null.
   String? coverFor(String url) => _coverByUrl[url];
 
-  /// Local cover file for a downloaded song, or null.
   String? coverPathOf(String trackId) => _coverById[trackId];
 
   void _publishFolder() {
@@ -166,7 +151,6 @@ class DownloadService {
     customFolder.value = _custom != null;
   }
 
-  /// Makes the Downloads playlist match what is on the phone.
   Future<void> _syncPlaylist() async {
     final ps = PlaylistService.instance;
     final pl = ps.byId(PlaylistService.downloadsId);
@@ -181,21 +165,14 @@ class DownloadService {
     }
   }
 
-  // ---------------- queries ----------------
-
   bool isDownloaded(String id) => items.value.containsKey(id);
 
-  /// Path of the saved file, or null when it is not saved (or was deleted).
   String? localPath(String id) {
     final it = items.value[id];
     if (it == null) return null;
     return File(it.path).existsSync() ? it.path : null;
   }
 
-  // ---------------- folder ----------------
-
-  /// Sets the folder for new downloads; null goes back to the app's own folder.
-  /// Returns an error message, or null on success.
   Future<String?> setFolder(String? path) async {
     if (path != null) {
       try {
@@ -228,9 +205,6 @@ class DownloadService {
     return d;
   }
 
-  // ---------------- actions ----------------
-
-  /// Adds a song to the download queue (also retries a failed one).
   void enqueue(Track t) {
     if (!t.isPlayable || isDownloaded(t.id)) return;
     final cur = tasks.value[t.id];
@@ -246,19 +220,17 @@ class DownloadService {
     }
   }
 
-  /// Stops a waiting or running download, or clears a failed one.
   void cancel(String id) {
     final t = tasks.value[id];
     if (t == null) return;
     _queue.remove(id);
     if (t.status == DownloadStatus.active) {
-      _cancelled.add(id); // the worker notices between chunks
+      _cancelled.add(id);
     } else {
       _setTask(id, null);
     }
   }
 
-  /// Deletes the saved file and takes the song out of Downloads.
   Future<void> remove(String id) async {
     final it = items.value[id];
     if (it != null) {
@@ -280,8 +252,6 @@ class DownloadService {
     }
     await PlaylistService.instance.removeTrack(PlaylistService.downloadsId, id);
   }
-
-  // ---------------- state helpers ----------------
 
   void _setTask(String id, DownloadTask? t) {
     final m = {...tasks.value};
@@ -306,9 +276,6 @@ class DownloadService {
     }
   }
 
-  // ---------------- the worker ----------------
-
-  /// One download at a time: it is gentler on the phone and on YouTube.
   Future<void> _pump() async {
     if (_working) return;
     _working = true;
@@ -339,8 +306,6 @@ class DownloadService {
 
   Future<void> _download(Track t) async {
     final dir = await _dir();
-    // a song the user is playing right now goes first (only matters for yt-dlp, which looks up
-    // one song at a time; the direct lookup does not queue behind anything)
     for (var i = 0;
         i < 60 && AudioUrlResolver.isBusy && !AudioUrlResolver.canLookUpDirectly(t.id);
         i++) {
@@ -382,8 +347,6 @@ class DownloadService {
     }
     if (path == null) throw Exception(errors.join(' | '));
 
-    // title, artist and cover go inside the file so other players show them;
-    // the cover is also kept as a file so the app can show it offline
     final cover = await _writeTags(t, path);
 
     final len = await File(path).length();
@@ -401,7 +364,6 @@ class DownloadService {
     await PlaylistService.instance.addTrack(PlaylistService.downloadsId, t);
   }
 
-  /// Downloads [r] in ranged chunks into a .part file, then renames it. Returns the path.
   Future<String> _fetchFile(Track t, ResolvedAudioUrl r, Directory dir) async {
     final uri = Uri.parse(r.url);
     final name = _fileName(t, _extension(uri));
@@ -416,10 +378,6 @@ class DownloadService {
       raf = await part.open(mode: FileMode.write);
       int? total = int.tryParse(uri.queryParameters['clen'] ?? '');
       var pos = 0;
-      // Every update rebuilds each download button, the banner and the queue,
-      // and bytes arrive in small blocks, so on a fast connection that was
-      // hundreds of rebuilds a second. At most ~5 a second is plenty for a
-      // progress bar that glides between values anyway.
       void report(int at) {
         final tot = total;
         if (tot == null || tot <= 0) return;
@@ -449,7 +407,6 @@ class DownloadService {
           throw Exception('server ignored the range');
         }
         if (res.statusCode == 200) {
-          // the server ignored the range and sends everything
           total ??= res.contentLength;
         } else {
           total ??= int.tryParse(res.headers['content-range']?.split('/').last ?? '');
@@ -459,7 +416,7 @@ class DownloadService {
           if (_cancelled.contains(t.id)) throw _Cancelled();
           await raf.writeFrom(bytes);
           got += bytes.length;
-          report(pos + got); // smooth progress: updates as the bytes arrive
+          report(pos + got);
         }
         if (got == 0) throw Exception('empty chunk');
         pos += got;
@@ -470,7 +427,7 @@ class DownloadService {
         if (total != null) {
           if (pos >= total) break;
         } else if (got < _chunk) {
-          break; // size unknown: a short chunk is the end
+          break;
         }
       }
       await raf.close();
@@ -492,8 +449,6 @@ class DownloadService {
     }
   }
 
-  /// Writes title / artist / album and the cover into the audio file.
-  /// Never fails the download: a song without tags still plays fine.
   Future<String> _writeTags(Track t, String path) async {
     TagLibFile? file;
     var coverPath = '';
@@ -511,7 +466,7 @@ class DownloadService {
               mime = 'image/png';
             } else if (type.contains('jpeg') || type.contains('jpg')) {
               cover = res.bodyBytes;
-            } // webp and others are skipped: m4a covers must be jpeg or png
+            }
           }
         } catch (e) {
           debugPrint('cover download failed for ${t.id}: $e');
@@ -519,7 +474,7 @@ class DownloadService {
       }
       if (cover != null) coverPath = await _saveCover(t.id, cover, mime);
       file = await TagLibFile.openAsync(path, writeAccess: true);
-      if (file == null) return coverPath; // format not supported (e.g. webm)
+      if (file == null) return coverPath;
       file.title = t.title;
       if (t.artist.isNotEmpty) file.artist = t.artist;
       if (t.album.isNotEmpty) file.album = t.album;
@@ -536,7 +491,6 @@ class DownloadService {
     return coverPath;
   }
 
-  /// Keeps the cover in the app's own folder (always writable, whatever the download folder is).
   Future<String> _saveCover(String id, Uint8List bytes, String mime) async {
     try {
       final dir = Directory('${_support.path}/covers');
@@ -550,7 +504,6 @@ class DownloadService {
     }
   }
 
-  /// Asks for a larger picture when the URL is a Google-hosted thumbnail (=w60-h60 style).
   static String? _bigCover(String url) {
     if (url.isEmpty) return null;
     return url.replaceFirstMapped(RegExp(r'=w\d+-h\d+'), (_) => '=w600-h600');

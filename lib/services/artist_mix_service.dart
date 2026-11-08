@@ -7,7 +7,6 @@ import '../models/track_model.dart';
 import 'api_service.dart';
 import 'history_service.dart';
 
-/// One "<Artist> Mix" playlist.
 class ArtistMix {
   final String artist;
   final String imageUrl;
@@ -46,8 +45,6 @@ class ArtistMix {
   }
 }
 
-/// Builds one mix per artist the user actually listens to (Spotify style):
-/// the songs they played by that artist plus more by the same artist.
 class ArtistMixService {
   ArtistMixService._();
   static final ArtistMixService instance = ArtistMixService._();
@@ -62,7 +59,7 @@ class ArtistMixService {
   final ValueNotifier<List<ArtistMix>> mixes = ValueNotifier<List<ArtistMix>>(const []);
   final ValueNotifier<bool> loading = ValueNotifier<bool>(false);
 
-  final Map<String, ArtistMix> _cache = {}; // keyed by lowercase artist
+  final Map<String, ArtistMix> _cache = {};
   final Map<String, int> _failedAt = {};
   Timer? _debounce;
   bool _running = false;
@@ -117,7 +114,7 @@ class ArtistMixService {
     }
     _running = true;
     loading.value = true;
-    var pass = force; // only the first pass is forced, a re-run is a normal refresh
+    var pass = force;
     try {
       do {
         _again = false;
@@ -132,7 +129,7 @@ class ArtistMixService {
             _failedAt[key] = DateTime.now().millisecondsSinceEpoch;
           } else {
             _cache[key] = built;
-            _publish(); // show each mix as soon as it is ready
+            _publish();
           }
         }
         pass = false;
@@ -144,7 +141,6 @@ class ArtistMixService {
     }
   }
 
-  /// Drops a song from every mix (used when the user removes it from their history).
   Future<void> forget(String trackId) async {
     var changed = false;
     for (final k in _cache.keys.toList()) {
@@ -163,7 +159,6 @@ class ArtistMixService {
     await _save();
   }
 
-  /// Songs from the last plays that are by [artist].
   List<Track> _played(String artist) {
     final k = _k(artist);
     return HistoryService.instance.tracks.value
@@ -188,7 +183,7 @@ class ArtistMixService {
     final played = _played(a.name);
     final seen = <String>{for (final t in played) t.id};
     final fresh = fetched.where((t) => t.isPlayable && seen.add(t.id)).toList();
-    if (fresh.isEmpty) return null; // nothing new: keep whatever we had
+    if (fresh.isEmpty) return null;
 
     final rnd = Random();
     final rest = [...fresh]..shuffle(rnd);

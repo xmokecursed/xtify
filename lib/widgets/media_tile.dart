@@ -6,13 +6,11 @@ import '../theme/app_theme.dart';
 import '../utils/image_cache.dart';
 import 'pressable.dart';
 
-/// Picture for a URL, or for a file:// URI (covers of downloaded songs work offline).
 ImageProvider artProviderFor(String url) {
   if (url.startsWith('file://')) return FileImage(File.fromUri(Uri.parse(url)));
   return CachedNetworkImageProvider(url);
 }
 
-/// Square (or round) artwork with a gray fallback icon.
 class ArtImage extends StatelessWidget {
   final String url;
   final double size;
@@ -53,7 +51,6 @@ class ArtImage extends StatelessWidget {
         child: url.isEmpty
             ? _fallback()
             : Image(
-                // a downloaded song's cover comes from the phone: instant and offline
                 image: url.startsWith('file://')
                     ? ResizeImage(
                         FileImage(File.fromUri(Uri.parse(url))),
@@ -83,8 +80,6 @@ class ArtImage extends StatelessWidget {
   }
 }
 
-/// Artwork with the title and subtitle underneath. Used in every carousel so
-/// songs, playlists and artists all line up the same way.
 class MediaTile extends StatelessWidget {
   final String title;
   final String? subtitle;

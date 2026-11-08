@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../services/connectivity_service.dart';
 import '../theme/app_theme.dart';
 
-/// "You're offline" strip that slides in and out with the connection.
 class OfflineBanner extends StatelessWidget {
   const OfflineBanner({super.key});
 

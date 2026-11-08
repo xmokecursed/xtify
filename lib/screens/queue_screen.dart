@@ -6,7 +6,6 @@ import '../theme/app_theme.dart';
 import '../widgets/media_tile.dart';
 import '../widgets/player_sheet.dart';
 
-/// The songs the user lined up: reorder, remove, or tap one to play it now.
 class QueueScreen extends StatelessWidget {
   const QueueScreen({super.key});
 

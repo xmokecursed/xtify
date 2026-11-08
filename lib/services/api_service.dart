@@ -6,15 +6,12 @@ import '../models/album_model.dart';
 class ApiService {
   static const String _baseUrl = 'https://xtify-backend.onrender.com';
 
-  // Search for tracks (using YouTube search endpoint)
   static Future<List<Track>> searchTracks(String query, {int limit = 25}) async {
     final searchUri = Uri.parse('$_baseUrl/search').replace(queryParameters: {
       'q': query,
       'limit': '$limit',
     });
     var response = await http.get(searchUri).timeout(const Duration(seconds: 60));
-    // The free server answers 502 or 504 while it wakes up or restarts: wait a little and ask
-    // again (twice at most) instead of failing the search straight away.
     for (var retry = 1; retry <= 2 && (response.statusCode == 502 || response.statusCode == 504); retry++) {
       await Future<void>.delayed(Duration(seconds: 3 * retry));
       response = await http.get(searchUri).timeout(const Duration(seconds: 60));
@@ -23,14 +20,11 @@ class ApiService {
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body);
       final List<Track> allTracks = data.map((json) => Track.fromJson(json)).toList();
-      // Filter for playable items: id must be 11-char YouTube ID
       final List<Track> playableTracks = allTracks.where((track) => track.isPlayable).toList();
-      // Drop items with null duration or duration above 900 s (15 minutes)
       final List<Track> durationFiltered = playableTracks.where((track) {
         final durationSeconds = _parseDurationToSeconds(track.duration);
         return durationSeconds != null && durationSeconds > 0 && durationSeconds <= 900;
       }).toList();
-      // Drop duplicate ids, keep first occurrence
       final Set<String> seenIds = <String>{};
       final List<Track> uniqueTracks = <Track>[];
       for (final track in durationFiltered) {
@@ -45,7 +39,6 @@ class ApiService {
     }
   }
 
-  /// Helper to convert duration string (m:ss or ss) to seconds.
   static int? _parseDurationToSeconds(String duration) {
     if (duration.isEmpty) return null;
     final parts = duration.split(':');
@@ -62,7 +55,6 @@ class ApiService {
     return null;
   }
 
-  // Get album information
   static Future<Album?> getAlbumInfo(String artist, String album) async {
     final response = await http.get(
       Uri.parse('$_baseUrl/album/$artist/$album'),
@@ -76,7 +68,6 @@ class ApiService {
     }
   }
 
-  // Similar artists: the backend returns a bare array [{name, url, image}]
   static Future<List<String>> getSimilarArtistNames(String artistName) async {
     final uri = Uri.parse(_baseUrl).replace(pathSegments: ['similar', artistName]);
     final response = await http.get(uri).timeout(const Duration(seconds: 30));
@@ -90,7 +81,6 @@ class ApiService {
         .toList();
   }
 
-  // Artist top tracks (Last.fm, no video ids): [{name, artist, url, duration}]
   static Future<List<Track>> getArtistTopTracks(String artistName) async {
     final uri = Uri.parse(_baseUrl).replace(pathSegments: ['radio', artistName]);
     final response = await http.get(uri).timeout(const Duration(seconds: 30));
@@ -101,7 +91,6 @@ class ApiService {
     return data.map((e) => Track.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  // General search (youTube search from original backend)
   static Future<List<Track>> searchYouTube(String query) async {
     final response = await http.get(
       Uri.parse('$_baseUrl/search').replace(queryParameters: {
@@ -117,7 +106,6 @@ class ApiService {
     }
   }
 
-  /// Last.fm track.getSimilar through the backend.
   static Future<List<SimilarTrack>> getSimilarTracks(
       String artist, String title, {int limit = 30}) async {
     final uri = Uri.parse(_baseUrl).replace(
@@ -141,7 +129,6 @@ class ApiService {
         .toList();
   }
 
-  /// Last.fm track search by name: [{name, artist}] (no video ids).
   static Future<List<SimilarTrack>> searchLastFmTracks(String query, {int limit = 3}) async {
     final uri = Uri.parse(_baseUrl).replace(
       pathSegments: ['track', 'search'],
@@ -164,7 +151,6 @@ class ApiService {
         .toList();
   }
 
-  /// YouTube's own "what plays next" Mix for a video, from the backend's yt-dlp.
   static Future<List<Track>> getRelated(String videoId) async {
     final r = await http
         .get(Uri.parse('$_baseUrl/related/$videoId'))
@@ -178,7 +164,6 @@ class ApiService {
         .toList();
   }
 
-  /// Similar songs from YouTube Music (its radio, else a song search), via the backend.
   static Future<List<Track>> getSimilarYtm(String videoId, {String query = '', String artist = ''}) async {
     final uri = Uri.parse(_baseUrl).replace(
       pathSegments: ['ytm', 'similar', videoId],
@@ -197,7 +182,6 @@ class ApiService {
         .toList();
   }
 
-  /// Songs by one artist from YouTube Music, matched by exact artist name (backend).
   static Future<List<Track>> getArtistSongsYtm(String name) async {
     final uri = Uri.parse(_baseUrl).replace(pathSegments: ['ytm', 'artist', name]);
     final r = await http.get(uri).timeout(const Duration(seconds: 45));
@@ -210,7 +194,6 @@ class ApiService {
         .toList();
   }
 
-  /// Global Last.fm chart through the backend: [{name, artist}] (no video ids).
   static Future<List<SimilarTrack>> getTrending({int limit = 24, String? country}) async {
     final query = <String, String>{
       'limit': '$limit',

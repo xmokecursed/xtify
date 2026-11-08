@@ -4,8 +4,6 @@ import '../models/track_model.dart';
 import '../theme/app_theme.dart';
 import 'media_tile.dart';
 
-/// Shown while a song is being prepared: art, title, bouncing bars and a thin
-/// progress line.
 class LoadingTrackCard extends StatefulWidget {
   final Track track;
   const LoadingTrackCard({super.key, required this.track});

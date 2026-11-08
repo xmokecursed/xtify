@@ -19,7 +19,6 @@ class CookieService {
   final ValueNotifier<bool> _signedInNotifier = ValueNotifier<bool>(false);
   ValueListenable<bool> get signedInListener => _signedInNotifier;
 
-  /// True when YouTube stopped accepting the saved sign-in (shows the "Sign in again" banner).
   final ValueNotifier<bool> _needsSignInNotifier = ValueNotifier<bool>(false);
   ValueListenable<bool> get needsSignInListener => _needsSignInNotifier;
 
@@ -29,7 +28,6 @@ class CookieService {
     }
   }
 
-  /// True when a yt-dlp / player error looks like "YouTube wants you signed in".
   static bool looksLikeAuthError(String message) {
     final m = message.toLowerCase();
     return m.contains('sign in to confirm') ||
@@ -55,7 +53,6 @@ class CookieService {
     if (file == null) {
       return false;
     }
-    // Check for auth cookie by name
     try {
       final content = await file.readAsString();
       final lines = content.split('\n');
@@ -137,9 +134,9 @@ class CookieService {
       await tmp.writeAsString(_generateNetscapeCookieString(allCookies), flush: true);
       await tmp.rename(file.path);
 
-      final signedIn = _hasAuth(allCookies); // from memory, not by re-reading the file
+      final signedIn = _hasAuth(allCookies);
       _signedInNotifier.value = signedIn;
-      if (signedIn) _needsSignInNotifier.value = false; // fresh sign-in: notice goes away
+      if (signedIn) _needsSignInNotifier.value = false;
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_signedInKey, signedIn);
@@ -158,7 +155,6 @@ class CookieService {
   String _generateNetscapeCookieString(List<Cookie> cookies) {
     final lines = ['# Netscape HTTP Cookie File'];
     for (final cookie in cookies) {
-      // Skip cookies with no value
       if (cookie.value == null || cookie.value!.isEmpty) {
         continue;
       }
@@ -169,11 +165,10 @@ class CookieService {
       final expiryDate = cookie.expiresDate;
       final expiry = expiryDate != null
           ? DateTime.fromMillisecondsSinceEpoch(expiryDate)
-          : DateTime.now().add(const Duration(days: 365 * 10)); // far future
+          : DateTime.now().add(const Duration(days: 365 * 10));
       final expiryEpoch = expiry.millisecondsSinceEpoch ~/ 1000;
       final name = cookie.name;
       final value = cookie.value;
-      // Prefix domain with #HttpOnly_ if it's HttpOnly
       final prefixedDomain = cookie.isHttpOnly ?? false ? '#HttpOnly_$domain' : domain;
       lines.add([
         prefixedDomain,
@@ -188,8 +183,6 @@ class CookieService {
     return lines.join('\n');
   }
 
-  /// Gets the cookie header string for YouTube domains from the cookie file.
-  /// Returns null if no cookie file exists or no YouTube cookies found.
   Future<String?> getYouTubeCookieHeader() async {
     final file = await cookieFile();
     if (file == null) {
@@ -206,7 +199,6 @@ class CookieService {
         final parts = line.split('\t');
         if (parts.length >= 7) {
           final domain = parts[0];
-          // Check if domain is for YouTube (including subdomains)
           if (domain.contains('youtube.com')) {
             final name = parts[5];
             final value = parts[6];
@@ -230,13 +222,11 @@ class CookieService {
 
   Future<void> signOut() async {
     try {
-      // Delete cookie file
       final file = await cookieFile();
       if (file != null) {
         await file.delete();
       }
 
-      // Clear WebView cookies for youtube.com and google.com
       await CookieManager.instance().deleteCookies(
         url: WebUri('https://www.youtube.com'),
       );
@@ -244,7 +234,6 @@ class CookieService {
         url: WebUri('https://accounts.google.com'),
       );
 
-      // Update sign-in status
       _signedInNotifier.value = false;
       _needsSignInNotifier.value = false;
       final prefs = await SharedPreferences.getInstance();

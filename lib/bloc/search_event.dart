@@ -16,7 +16,6 @@ class SearchTracks extends SearchEvent {
   List<Object> get props => [query];
 }
 
-/// Fetch the next batch of results for the current query.
 class LoadMoreResults extends SearchEvent {
   const LoadMoreResults();
 }

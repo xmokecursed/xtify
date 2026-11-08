@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../services/debug_log.dart';
 import '../theme/app_theme.dart';
 
-/// Small bug icon: copies the debug info to the clipboard.
 class DebugInfoButton extends StatelessWidget {
   const DebugInfoButton({super.key});
 

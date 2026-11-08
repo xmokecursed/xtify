@@ -8,8 +8,6 @@ import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
 import 'media_tile.dart';
 
-/// Download icon for one song. It animates between: download -> progress ring
-/// (with a stop square, tap to cancel) -> green check.
 class DownloadButton extends StatelessWidget {
   final Track track;
   final double size;
@@ -78,13 +76,6 @@ class DownloadButton extends StatelessWidget {
             duration: const Duration(milliseconds: 350),
             switchInCurve: Curves.elasticOut,
             switchOutCurve: Curves.easeIn,
-            // elasticOut swings past 1.0. Scale handles that, and the framework
-            // clamps opacity itself, so the animation goes straight into both.
-            // It must NOT go through a CurveTween: Curve.transform asserts on
-            // values outside 0..1, and since the switcher rebuilds this
-            // transition on every download progress tick, that assertion fired
-            // in the middle of a rebuild and left broken widgets behind (the
-            // red error boxes, then "wrong build scope" for the whole sheet).
             transitionBuilder: (child, anim) => ScaleTransition(
               scale: anim,
               child: FadeTransition(opacity: anim, child: child),
@@ -97,7 +88,6 @@ class DownloadButton extends StatelessWidget {
   }
 }
 
-/// null = not started yet (spins), otherwise 0..1 (never NaN or past 1).
 double? _progressOf(DownloadTask t) {
   if (t.status != DownloadStatus.active) return null;
   final p = t.progress;
@@ -105,7 +95,6 @@ double? _progressOf(DownloadTask t) {
   return p > 1 ? 1.0 : p;
 }
 
-/// Circular progress that glides between values, with a stop square inside.
 class _ProgressRing extends StatelessWidget {
   final double size;
   final double? progress;
@@ -114,7 +103,7 @@ class _ProgressRing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final box = size + 2;
-    final value = progress; // a local, so the null check below promotes it
+    final value = progress;
     return SizedBox(
       width: box,
       height: box,
@@ -150,14 +139,13 @@ class _ProgressRing extends StatelessWidget {
   }
 }
 
-/// Bar that glides to its value; sweeps back and forth while the size is unknown.
 class _SmoothBar extends StatelessWidget {
   final double? progress;
   const _SmoothBar({required this.progress});
 
   @override
   Widget build(BuildContext context) {
-    final value = progress; // a local, so the null check below promotes it
+    final value = progress;
     return ClipRRect(
       borderRadius: BorderRadius.circular(3),
       child: SizedBox(
@@ -172,10 +160,6 @@ class _SmoothBar extends StatelessWidget {
                 tween: Tween<double>(end: value),
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeOut,
-                // The track fills the whole bar (StackFit.expand) and the fill
-                // gets a definite height, so both are always visible. Before,
-                // the stack was only as wide as the fill and the fill had no
-                // height at all.
                 builder: (_, v, _) => Stack(
                   fit: StackFit.expand,
                   children: [
@@ -202,8 +186,6 @@ void _openDownloads(BuildContext context) {
   ));
 }
 
-/// Floating card that shows what is downloading, then "Saved" or "Failed".
-/// It lives just above the mini player, so it is on every screen.
 class DownloadBanner extends StatefulWidget {
   const DownloadBanner({super.key});
 
@@ -306,7 +288,7 @@ class _ActiveCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = _progressOf(task);
-    final finishing = p != null && p >= 0.995; // saving tags and cover
+    final finishing = p != null && p >= 0.995;
     final label = finishing
         ? 'Finishing…'
         : total > 1
@@ -459,7 +441,6 @@ class _ResultCard extends StatelessWidget {
   }
 }
 
-/// The waiting / running / failed downloads, shown on top of the Downloads screen.
 class DownloadQueueSection extends StatelessWidget {
   const DownloadQueueSection({super.key});
 
@@ -563,7 +544,6 @@ class _QueueRow extends StatelessWidget {
   }
 }
 
-/// Row showing where downloads are saved; tap to change it.
 class DownloadFolderTile extends StatelessWidget {
   const DownloadFolderTile({super.key});
 
@@ -596,7 +576,6 @@ class DownloadFolderTile extends StatelessWidget {
   }
 }
 
-/// Lets the user pick a download folder or go back to the app's own one.
 Future<void> showDownloadFolderSheet(BuildContext context) {
   final messenger = ScaffoldMessenger.of(context);
   final svc = DownloadService.instance;
@@ -610,7 +589,7 @@ Future<void> showDownloadFolderSheet(BuildContext context) {
       messenger.showSnackBar(const SnackBar(content: Text('Could not open the folder picker')));
       return;
     }
-    if (picked == null) return; // cancelled
+    if (picked == null) return;
     final err = await svc.setFolder(picked);
     messenger.showSnackBar(SnackBar(
       content: Text(err ?? 'New downloads will be saved to $picked'),
