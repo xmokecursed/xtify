@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.xtify_app"
+    namespace = "com.xmokecursed.xtify"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -14,7 +14,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.xtify_app"
+        applicationId = "com.xmokecursed.xtify"
         minSdk = 24
         ndk {
             abiFilters += listOf("arm64-v8a")
