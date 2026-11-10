@@ -4,6 +4,8 @@
 *.pyc
 *.swp
 *.patch
+*.vs
+*.vscode
 .DS_Store
 .atom/
 .build/
