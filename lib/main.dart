@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:xtify_app/screens/home_screen.dart';
 import 'package:xtify_app/screens/search_screen.dart';
 import 'package:xtify_app/screens/library_screen.dart';
@@ -29,6 +30,8 @@ void main() async {
   DebugLog.install();
   PaintingBinding.instance.imageCache.maximumSize = 120;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 60 << 20;
+  JustAudioMediaKit.title = 'Xtify';
+  JustAudioMediaKit.ensureInitialized(linux: false);
   
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
