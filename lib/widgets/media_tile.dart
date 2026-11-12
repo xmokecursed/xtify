@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../desktop/desktop_scope.dart';
+import '../desktop/hover_builder.dart';
 import '../services/download_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/image_cache.dart';
@@ -90,6 +92,7 @@ class MediaTile extends StatelessWidget {
   final IconData fallbackIcon;
   final Widget? badge;
   final double size;
+  final VoidCallback? onPlay;
 
   const MediaTile({
     super.key,
@@ -102,10 +105,118 @@ class MediaTile extends StatelessWidget {
     this.fallbackIcon = Icons.music_note,
     this.badge,
     this.size = 140,
+    this.onPlay,
   });
+
+  Widget _wide() {
+    final align = circular ? CrossAxisAlignment.center : CrossAxisAlignment.start;
+    final textAlign = circular ? TextAlign.center : TextAlign.start;
+    return SizedBox(
+      width: size + 24,
+      child: HoverBuilder(
+        builder: (context, hovered) => Pressable(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          focusRadius: 14,
+          hoverTint: true,
+          scale: 0.98,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: align,
+              children: [
+                Stack(
+                  children: [
+                    ArtImage(
+                      url: imageUrl,
+                      size: size,
+                      circular: circular,
+                      fallbackIcon: fallbackIcon,
+                    ),
+                    if (badge != null) Positioned(right: 6, top: 6, child: badge!),
+                    if (onPlay != null)
+                      Positioned(
+                        right: 8,
+                        bottom: 8,
+                        child: IgnorePointer(
+                          ignoring: !hovered,
+                          child: AnimatedOpacity(
+                            opacity: hovered ? 1 : 0,
+                            duration: const Duration(milliseconds: 150),
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: onPlay,
+                              child: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.accent,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Color(0x66000000),
+                                      blurRadius: 12,
+                                      offset: Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.play_arrow_rounded,
+                                  color: Colors.black,
+                                  size: 28,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: size,
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: textAlign,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.1,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                if (subtitle != null && subtitle!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: SizedBox(
+                      width: size,
+                      child: Text(
+                        subtitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: textAlign,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (DesktopScope.isWide(context)) return _wide();
     final align = circular ? CrossAxisAlignment.center : CrossAxisAlignment.start;
     final textAlign = circular ? TextAlign.center : TextAlign.start;
     return SizedBox(

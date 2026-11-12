@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../desktop/desktop_scope.dart';
 import '../theme/app_theme.dart';
 
 class ScreenHeader extends StatelessWidget {
@@ -152,13 +153,16 @@ class HList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final wide = DesktopScope.isWide(context);
     return SizedBox(
-      height: height,
+      height: wide ? height + 24 : height,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
+        padding: EdgeInsets.symmetric(
+          horizontal: wide ? AppSpacing.screen - 12 : AppSpacing.screen,
+        ),
         itemCount: itemCount,
-        separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.gap),
+        separatorBuilder: (_, _) => SizedBox(width: wide ? 0 : AppSpacing.gap),
         itemBuilder: itemBuilder,
       ),
     );

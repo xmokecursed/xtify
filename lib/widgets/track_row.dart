@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../desktop/desktop_scope.dart';
 import '../models/track_model.dart';
 import '../theme/app_theme.dart';
 import 'download_widgets.dart';
@@ -41,14 +43,16 @@ class TrackRow extends StatelessWidget {
   }
 
   Widget _row(BuildContext context) {
-    return InkWell(
+    final wide = DesktopScope.isWide(context);
+    final row = InkWell(
+      hoverColor: wide ? AppColors.highlight : null,
       onTap: playableNow(track)
           ? (onTap ?? () => playTrackWithFeedback(context, track, searchedFor: searchedFor))
           : () => playTrackWithFeedback(context, track, searchedFor: searchedFor),
       onLongPress: () => showTrackOptions(context, track),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.screen, vertical: 8),
+        padding: EdgeInsets.symmetric(
+            horizontal: wide ? 12 : AppSpacing.screen, vertical: 8),
         child: Row(
           children: [
             ArtImage(url: track.imageUrl, size: 54, radius: 8),
@@ -90,6 +94,28 @@ class TrackRow extends StatelessWidget {
                 onPressed: () => showTrackOptions(context, track),
               ),
           ],
+        ),
+      ),
+    );
+    if (!wide) return row;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen, vertical: 3),
+      child: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.contextMenu): () =>
+              showTrackOptions(context, track),
+          const SingleActivator(LogicalKeyboardKey.f10, shift: true): () =>
+              showTrackOptions(context, track),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onSecondaryTap: () => showTrackOptions(context, track),
+          child: Material(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: row,
+          ),
         ),
       ),
     );

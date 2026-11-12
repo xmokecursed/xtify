@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:xtify_app/bloc/search_bloc.dart';
+import 'package:xtify_app/desktop/app_nav.dart';
+import 'package:xtify_app/desktop/desktop_scope.dart';
 import 'package:xtify_app/models/playlist_model.dart';
 import 'package:xtify_app/screens/playlist_screen.dart';
 import 'package:xtify_app/services/playlist_service.dart';
@@ -19,43 +21,41 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  final TextEditingController _controller = TextEditingController();
-  final FocusNode _focus = FocusNode();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _focus.dispose();
-    super.dispose();
-  }
+  final TextEditingController _controller = AppNav.instance.searchController;
+  final FocusNode _focus = AppNav.instance.searchFocus;
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => SearchBloc(),
+    final wide = DesktopScope.isWide(context);
+    return BlocProvider.value(
+      value: context.read<SearchBloc>(),
       child: BlocBuilder<SearchBloc, SearchState>(
         builder: (context, state) {
           return CustomScrollView(
             slivers: [
-              const SliverToBoxAdapter(child: ScreenHeader(title: 'Search')),
+              if (!wide)
+                const SliverToBoxAdapter(child: ScreenHeader(title: 'Search')),
               const SliverToBoxAdapter(child: OfflineBanner()),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.screen, 0, AppSpacing.screen, 16),
-                  child: SearchBarWidget(
-                    controller: _controller,
-                    focusNode: _focus,
-                    onSubmitted: (query) {
-                      SearchHistoryService.instance.add(query);
-                      context.read<SearchBloc>().add(SearchTracks(query));
-                    },
-                    onSearchCleared: () {
-                      context.read<SearchBloc>().add(const ClearSearch());
-                    },
+              if (wide)
+                const SliverToBoxAdapter(child: SizedBox(height: 12))
+              else
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.screen, 0, AppSpacing.screen, 16),
+                    child: SearchBarWidget(
+                      controller: _controller,
+                      focusNode: _focus,
+                      onSubmitted: (query) {
+                        SearchHistoryService.instance.add(query);
+                        context.read<SearchBloc>().add(SearchTracks(query));
+                      },
+                      onSearchCleared: () {
+                        context.read<SearchBloc>().add(const ClearSearch());
+                      },
+                    ),
                   ),
                 ),
-              ),
               if (state is SearchLoading)
                 const SliverFillRemaining(
                   hasScrollBody: false,

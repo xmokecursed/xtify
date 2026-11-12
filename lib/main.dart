@@ -1,9 +1,16 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'package:xtify_app/bloc/search_bloc.dart';
+import 'package:xtify_app/desktop/app_nav.dart';
+import 'package:xtify_app/desktop/desktop_keys.dart';
+import 'package:xtify_app/desktop/desktop_scope.dart';
+import 'package:xtify_app/desktop/desktop_shell.dart';
 import 'package:xtify_app/screens/home_screen.dart';
 import 'package:xtify_app/screens/search_screen.dart';
 import 'package:xtify_app/screens/library_screen.dart';
@@ -51,6 +58,7 @@ void main() async {
     await SearchHistoryService.instance.init();
     await FeedService.instance.init();
     await XtifyAudioHandler.instance.restoreLast();
+    if (isDesktopPlatform) await XtifyAudioHandler.instance.restoreVolume();
   } catch (e) {
     debugPrint('Setup error: $e');
     rethrow;
@@ -74,31 +82,69 @@ void main() async {
   Future.delayed(const Duration(minutes: 1), () => CookieRefreshService.instance.refreshIfOlderThan(const Duration(hours: 12)));
 }
 
+class XtifyScrollBehavior extends MaterialScrollBehavior {
+  const XtifyScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.trackpad,
+      };
+}
+
 class XtifyApp extends StatelessWidget {
   const XtifyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Xtify',
-      theme: buildAppTheme(),
-      themeMode: ThemeMode.dark,
-      home: const XtifyHome(),
-      debugShowCheckedModeBanner: false,
+    return BlocProvider(
+      create: (_) => SearchBloc(),
+      child: MaterialApp(
+        navigatorKey: AppNav.instance.rootKey,
+        title: 'Xtify',
+        theme: buildAppTheme(),
+        themeMode: ThemeMode.dark,
+        scrollBehavior: const XtifyScrollBehavior(),
+        home: const XtifyHome(),
+        debugShowCheckedModeBanner: false,
+      ),
     );
   }
 }
 
-class XtifyHome extends StatefulWidget {
+class XtifyHome extends StatelessWidget {
   const XtifyHome({super.key});
 
   @override
-  State<XtifyHome> createState() => _XtifyHomeState();
+  Widget build(BuildContext context) {
+    if (!isDesktopPlatform) return const _MobileHome();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= kWideMinWidth &&
+            constraints.maxHeight >= kWideMinHeight;
+        return DesktopScope(
+          wide: wide,
+          child: DesktopKeyboard(
+            child: wide ? const DesktopShell() : const _MobileHome(),
+          ),
+        );
+      },
+    );
+  }
 }
 
-class _XtifyHomeState extends State<XtifyHome>
+class _MobileHome extends StatefulWidget {
+  const _MobileHome();
+
+  @override
+  State<_MobileHome> createState() => _MobileHomeState();
+}
+
+class _MobileHomeState extends State<_MobileHome>
     with SingleTickerProviderStateMixin {
-  int _selectedIndex = 0;
+  int _selectedIndex = AppNav.instance.tab.value;
   late final AnimationController _fadeCtl = AnimationController(
     vsync: this,
     duration: AppMotion.medium,
@@ -108,7 +154,14 @@ class _XtifyHomeState extends State<XtifyHome>
       CurvedAnimation(parent: _fadeCtl, curve: AppMotion.curve);
 
   @override
+  void initState() {
+    super.initState();
+    AppNav.instance.tab.addListener(_onTabChanged);
+  }
+
+  @override
   void dispose() {
+    AppNav.instance.tab.removeListener(_onTabChanged);
     _fadeCtl.dispose();
     super.dispose();
   }
@@ -119,12 +172,17 @@ class _XtifyHomeState extends State<XtifyHome>
     LibraryScreen(),
   ];
 
-  void _onItemTapped(int index) {
-    if (index == _selectedIndex) return;
+  void _onTabChanged() {
+    final index = AppNav.instance.tab.value;
+    if (!mounted || index == _selectedIndex) return;
     _fadeCtl.forward(from: 0.35);
     setState(() {
       _selectedIndex = index;
     });
+  }
+
+  void _onItemTapped(int index) {
+    AppNav.instance.tab.value = index;
   }
 
   @override

@@ -39,6 +39,8 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   final ValueNotifier<List<Track>> upNextQueue = ValueNotifier<List<Track>>(const []);
   final ValueNotifier<bool> shuffleOn = ValueNotifier<bool>(false);
   final ValueNotifier<XtifyRepeat> repeat = ValueNotifier<XtifyRepeat>(XtifyRepeat.off);
+  final ValueNotifier<double> volume = ValueNotifier<double>(1.0);
+  double _volumeBeforeMute = 1.0;
 
   Track? get currentTrack => _currentTrack;
   bool _nextQueued = false;
@@ -867,6 +869,54 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     final next = XtifyRepeat.values[(repeat.value.index + 1) % XtifyRepeat.values.length];
     repeat.value = next;
     await _dropPreloaded();
+  }
+
+  Future<void> togglePlayPause() async {
+    if (_currentTrack == null) return;
+    if (playbackState.value.playing) {
+      await pause();
+    } else {
+      await play();
+    }
+  }
+
+  Future<void> seekBy(Duration delta) async {
+    if (_currentTrack == null) return;
+    var target = (_sourceLoaded ? _player.position : _restoredPosition) + delta;
+    final total = _player.duration ?? _mediaItem.valueOrNull?.duration;
+    if (total != null && total > Duration.zero && target > total) target = total;
+    if (target < Duration.zero) target = Duration.zero;
+    await seek(target);
+  }
+
+  Timer? _volumeSaveTimer;
+
+  Future<void> setVolume(double value) async {
+    final v = value.clamp(0.0, 1.0).toDouble();
+    volume.value = v;
+    _volumeSaveTimer?.cancel();
+    _volumeSaveTimer = Timer(const Duration(milliseconds: 400), () {
+      SharedPreferences.getInstance().then((p) => p.setDouble('volume', v));
+    });
+    await _player.setVolume(v);
+  }
+
+  Future<void> toggleMute() async {
+    if (volume.value > 0) {
+      _volumeBeforeMute = volume.value;
+      await setVolume(0);
+    } else {
+      await setVolume(_volumeBeforeMute > 0 ? _volumeBeforeMute : 1.0);
+    }
+  }
+
+  Future<void> restoreVolume() async {
+    final saved = (await SharedPreferences.getInstance()).getDouble('volume');
+    if (saved == null) return;
+    final v = saved.clamp(0.0, 1.0).toDouble();
+    volume.value = v;
+    if (v > 0) _volumeBeforeMute = v;
+    await _player.setVolume(v);
   }
 
   ResolvedAudioUrl? _localUrl(String videoId) {

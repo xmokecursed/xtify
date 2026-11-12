@@ -2,20 +2,45 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../desktop/app_nav.dart';
+import '../desktop/desktop_scope.dart';
 import '../models/playlist_model.dart';
 import '../models/track_model.dart';
+import '../services/audio_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/download_service.dart';
 import '../services/feed_service.dart';
 import '../services/artist_mix_service.dart';
+import '../services/history_service.dart';
 import '../services/playlist_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/layout.dart';
 import '../widgets/media_tile.dart';
 import '../widgets/offline_banner.dart';
+import '../widgets/play_helper.dart';
 import '../widgets/recently_played.dart';
 import '../widgets/track_carousel.dart';
 import 'artist_mix_screen.dart';
 import 'playlist_screen.dart';
+
+String _greeting() {
+  final hour = DateTime.now().hour;
+  if (hour < 5) return 'Good night';
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+void _playAll(BuildContext context, List<Track> tracks) {
+  if (tracks.isEmpty) return;
+  XtifyAudioHandler.instance.playPlaylist(tracks).catchError((Object e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not start playback')),
+      );
+    }
+  });
+}
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -23,6 +48,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final feed = FeedService.instance;
+    final wide = DesktopScope.isWide(context);
     return RefreshIndicator(
       onRefresh: () async {
         unawaited(feed.refreshAll(force: true).catchError((Object e) {
@@ -35,8 +61,13 @@ class HomeScreen extends StatelessWidget {
         builder: (context, online, _) => CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          const SliverToBoxAdapter(child: ScreenHeader(title: 'Xtify', showLogo: true)),
+          SliverToBoxAdapter(
+            child: wide
+                ? ScreenHeader(title: _greeting())
+                : const ScreenHeader(title: 'Xtify', showLogo: true),
+          ),
           const SliverToBoxAdapter(child: OfflineBanner()),
+          if (wide) const SliverToBoxAdapter(child: _Hero()),
           if (!online)
             SectionSliver(
               title: 'Downloaded songs',
@@ -77,6 +108,7 @@ class HomeScreen extends StatelessWidget {
                       subtitle: '${m.tracks.length} songs',
                       imageUrl: m.imageUrl,
                       fallbackIcon: Icons.person,
+                      onPlay: () => _playAll(context, m.tracks),
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -113,6 +145,7 @@ class HomeScreen extends StatelessWidget {
                       title: p.title,
                       subtitle: '${p.tracks.length} songs',
                       imageUrl: p.imageUrl,
+                      onPlay: () => _playAll(context, p.tracks),
                       fallbackIcon: p.id == PlaylistService.favouritesId
                           ? Icons.favorite
                           : p.id == PlaylistService.downloadsId
@@ -170,6 +203,112 @@ class _BusyDot extends StatelessWidget {
             ? const CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)
             : null,
       ),
+    );
+  }
+}
+
+class _Hero extends StatelessWidget {
+  const _Hero();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<List<Track>>(
+      valueListenable: HistoryService.instance.tracks,
+      builder: (context, history, _) {
+        final track = history.isEmpty ? null : history.first;
+        final buttonStyle = FilledButton.styleFrom(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+          shape: const StadiumBorder(),
+        );
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.screen,
+            0,
+            AppSpacing.screen,
+            AppSpacing.section,
+          ),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 210),
+            padding: const EdgeInsets.fromLTRB(32, 24, 24, 24),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [AppColors.accent, AppColors.accentDeep],
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        track == null ? 'WELCOME' : 'JUMP BACK IN',
+                        style: const TextStyle(
+                          color: Color(0xCC000000),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        track?.title ?? 'Find something to play',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 30,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -1,
+                          height: 1.05,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        track == null
+                            ? 'Press Ctrl+K to search for songs and artists'
+                            : track.artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xCC000000),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      if (track == null)
+                        FilledButton.icon(
+                          style: buttonStyle,
+                          onPressed: AppNav.instance.focusSearch,
+                          icon: const Icon(Icons.search_rounded),
+                          label: const Text('Search'),
+                        )
+                      else
+                        FilledButton.icon(
+                          style: buttonStyle,
+                          onPressed: () => playTrackWithFeedback(context, track),
+                          icon: const Icon(Icons.play_arrow_rounded),
+                          label: const Text('Play'),
+                        ),
+                    ],
+                  ),
+                ),
+                if (track != null) ...[
+                  const SizedBox(width: 24),
+                  ArtImage(url: track.imageUrl, size: 162, radius: 14),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

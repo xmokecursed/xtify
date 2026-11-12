@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import '../desktop/desktop_scope.dart';
 import 'download_widgets.dart';
 import 'media_tile.dart';
 import 'pressable.dart';
@@ -52,6 +53,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    if (DesktopScope.isWide(context)) return const SizedBox.shrink();
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -360,7 +362,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
           const SizedBox(height: 8),
           const _MainControls(),
           const SizedBox(height: 16),
-          const _ActionRow(),
+          const PlayerActionRow(),
           const SizedBox(height: 28),
           const Row(
             children: [
@@ -375,10 +377,10 @@ class _PlayerSheetState extends State<PlayerSheet> {
                   ),
                 ),
               ),
-              _AutoQueueGear(),
+              AutoQueueGear(),
             ],
           ),
-          const _AutoQueueNotice(),
+          const AutoQueueNotice(),
           const SizedBox(height: 8),
           StreamBuilder<List<MediaItem>>(
             stream: XtifyAudioHandler.instance.queue,
@@ -659,8 +661,10 @@ class _ModeButton extends StatelessWidget {
   }
 }
 
-class _ActionRow extends StatelessWidget {
-  const _ActionRow();
+class PlayerActionRow extends StatelessWidget {
+  final VoidCallback? onOpenQueue;
+
+  const PlayerActionRow({super.key, this.onOpenQueue});
 
   @override
   Widget build(BuildContext context) {
@@ -703,8 +707,9 @@ class _ActionRow extends StatelessWidget {
                     label: Text('${queue.length}'),
                     child: const Icon(Icons.queue_music_rounded, size: 26),
                   ),
-                  onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(builder: (_) => const QueueScreen())),
+                  onPressed: onOpenQueue ??
+                      () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const QueueScreen())),
                 ),
               ),
               IconButton(
@@ -722,8 +727,8 @@ class _ActionRow extends StatelessWidget {
   }
 }
 
-class _AutoQueueGear extends StatelessWidget {
-  const _AutoQueueGear();
+class AutoQueueGear extends StatelessWidget {
+  const AutoQueueGear({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -750,8 +755,8 @@ class _AutoQueueGear extends StatelessWidget {
   }
 }
 
-class _AutoQueueNotice extends StatelessWidget {
-  const _AutoQueueNotice();
+class AutoQueueNotice extends StatelessWidget {
+  const AutoQueueNotice({super.key});
 
   @override
   Widget build(BuildContext context) {

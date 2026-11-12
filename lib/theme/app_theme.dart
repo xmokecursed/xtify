@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
+import '../desktop/desktop_scope.dart' show isDesktopPlatform;
 
 class AppColors {
   static const Color black = Color(0xFF000000);
@@ -11,6 +12,9 @@ class AppColors {
 
   static const Color hairline = Color(0x1FFFFFFF);
   static const Color highlight = Color(0x14FFFFFF);
+
+  static const Color accent = Color(0xFF34D058);
+  static const Color accentDeep = Color(0xFF1E9E55);
 }
 
 class AppRadius {
@@ -31,6 +35,24 @@ class AppSpacing {
   static const double section = 28;
 
   static const double gap = 14;
+}
+
+class DesktopFadeTransitionsBuilder extends PageTransitionsBuilder {
+  const DesktopFadeTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return FadeTransition(
+      opacity: animation.drive(CurveTween(curve: Curves.easeOutCubic)),
+      child: child,
+    );
+  }
 }
 
 ThemeData buildAppTheme() {
@@ -57,6 +79,9 @@ ThemeData buildAppTheme() {
     pageTransitionsTheme: const PageTransitionsTheme(builders: {
       TargetPlatform.android: CupertinoPageTransitionsBuilder(),
       TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.windows: DesktopFadeTransitionsBuilder(),
+      TargetPlatform.linux: DesktopFadeTransitionsBuilder(),
+      TargetPlatform.macOS: DesktopFadeTransitionsBuilder(),
     }),
     iconTheme: const IconThemeData(color: Colors.white),
     dividerColor: AppColors.border,
@@ -161,6 +186,7 @@ ThemeData buildAppTheme() {
       contentTextStyle: const TextStyle(color: Colors.white, fontSize: 14),
       actionTextColor: Colors.white,
       behavior: SnackBarBehavior.floating,
+      width: isDesktopPlatform ? 480 : null,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: const BorderSide(color: AppColors.hairline),
