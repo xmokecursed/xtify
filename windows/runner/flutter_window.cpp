@@ -10,16 +10,27 @@
 
 namespace {
 
-constexpr int kMinWindowWidth = 360;
-constexpr int kMinWindowHeight = 480;
+constexpr int kMinClientWidth = 920;
+constexpr int kMinClientHeight = 600;
 
 UINT DpiOf(HWND hwnd) {
   const UINT dpi = GetDpiForWindow(hwnd);
   return dpi != 0 ? dpi : 96;
 }
 
-LRESULT CalculateClientArea(HWND hwnd, NCCALCSIZE_PARAMS* params) {
-  RECT* proposed = &params->rgrc[0];
+struct FrameInsets {
+  int x;
+  int y;
+};
+
+FrameInsets InsetsOf(HWND hwnd) {
+  const UINT dpi = DpiOf(hwnd);
+  const int padding = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+  return {GetSystemMetricsForDpi(SM_CXFRAME, dpi) + padding,
+          GetSystemMetricsForDpi(SM_CYFRAME, dpi) + padding};
+}
+
+LRESULT CalculateClientArea(HWND hwnd, RECT* proposed) {
   if (IsZoomed(hwnd)) {
     MONITORINFO monitor_info = {};
     monitor_info.cbSize = sizeof(monitor_info);
@@ -31,13 +42,10 @@ LRESULT CalculateClientArea(HWND hwnd, NCCALCSIZE_PARAMS* params) {
     }
     return 0;
   }
-  const UINT dpi = DpiOf(hwnd);
-  const int padding = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-  const int border_x = GetSystemMetricsForDpi(SM_CXFRAME, dpi) + padding;
-  const int border_y = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + padding;
-  proposed->left += border_x;
-  proposed->right -= border_x;
-  proposed->bottom -= border_y;
+  const FrameInsets insets = InsetsOf(hwnd);
+  proposed->left += insets.x;
+  proposed->right -= insets.x;
+  proposed->bottom -= insets.y;
   proposed->top += 1;
   return 0;
 }
@@ -76,6 +84,10 @@ bool FlutterWindow::OnCreate() {
   if (!Win32Window::OnCreate()) {
     return false;
   }
+
+  SetWindowPos(GetHandle(), nullptr, 0, 0, 0, 0,
+               SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                   SWP_NOACTIVATE);
 
   RECT frame = GetClientArea();
 
@@ -210,17 +222,18 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       break;
     case WM_NCCALCSIZE:
       if (wparam != FALSE) {
-        return CalculateClientArea(hwnd,
-                                   reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam));
+        return CalculateClientArea(
+            hwnd, &reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam)->rgrc[0]);
       }
-      break;
+      return CalculateClientArea(hwnd, reinterpret_cast<RECT*>(lparam));
     case WM_NCACTIVATE:
       return TRUE;
     case WM_GETMINMAXINFO: {
       auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
       const int dpi = static_cast<int>(DpiOf(hwnd));
-      info->ptMinTrackSize.x = MulDiv(kMinWindowWidth, dpi, 96);
-      info->ptMinTrackSize.y = MulDiv(kMinWindowHeight, dpi, 96);
+      const FrameInsets insets = InsetsOf(hwnd);
+      info->ptMinTrackSize.x = MulDiv(kMinClientWidth, dpi, 96) + 2 * insets.x;
+      info->ptMinTrackSize.y = MulDiv(kMinClientHeight, dpi, 96) + insets.y + 1;
       return 0;
     }
     case WM_SIZE:

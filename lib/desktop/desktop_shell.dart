@@ -124,7 +124,7 @@ class _Content extends StatelessWidget {
         child: SpaceTogglesPlayback(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(14),
-            child: ColoredBox(
+            child: Material(
               color: AppColors.surface,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -146,21 +146,9 @@ class _Content extends StatelessWidget {
                   ),
                   ValueListenableBuilder<bool>(
                     valueListenable: nav.nowPlayingOpen,
-                    builder: (_, open, _) => TweenAnimationBuilder<double>(
-                      tween: Tween<double>(end: open ? 1.0 : 0.0),
-                      duration: AppMotion.medium,
-                      curve: AppMotion.curve,
-                      child: const _Region(order: 4, child: NowPlayingPanel()),
-                      builder: (context, t, child) => t == 0
-                          ? const SizedBox.shrink()
-                          : ClipRect(
-                              child: Align(
-                                alignment: Alignment.centerRight,
-                                widthFactor: t,
-                                child: child,
-                              ),
-                            ),
-                    ),
+                    builder: (_, open, _) => open
+                        ? const _Region(order: 4, child: NowPlayingPanel())
+                        : const SizedBox.shrink(),
                   ),
                 ],
               ),
@@ -332,7 +320,7 @@ class DesktopTopBar extends StatelessWidget {
           padding: EdgeInsets.fromLTRB(
             8,
             10,
-            controlsWidth > 0 ? controlsWidth + 8 : 16,
+            controlsWidth > 0 ? controlsWidth + 16 : 16,
             10,
           ),
           child: Row(
@@ -351,6 +339,16 @@ class DesktopTopBar extends StatelessWidget {
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Refresh home (F5)',
+                onPressed: nav.refreshFeed,
+                icon: const Icon(Icons.refresh_rounded, size: 22),
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.card,
+                  foregroundColor: Colors.white,
+                ),
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Align(
@@ -359,16 +357,6 @@ class DesktopTopBar extends StatelessWidget {
                     constraints: BoxConstraints(maxWidth: 560),
                     child: DesktopSearchField(),
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              IconButton(
-                tooltip: 'Refresh home (F5)',
-                onPressed: nav.refreshFeed,
-                icon: const Icon(Icons.refresh_rounded, size: 22),
-                style: IconButton.styleFrom(
-                  backgroundColor: AppColors.card,
-                  foregroundColor: Colors.white,
                 ),
               ),
             ],

@@ -66,11 +66,13 @@ void main() async {
   }
   if (isDesktopPlatform) await WindowChrome.instance.init();
   runApp(const XtifyApp());
-  AudioUrlResolver.ensureInitialized()
-      .then((_) => AudioUrlResolver.ensureModern())
-      .catchError((e) {
-    debugPrint('Extractor init error (will retry on first use): $e');
-  });
+  if (!isDesktopPlatform) {
+    AudioUrlResolver.ensureInitialized()
+        .then((_) => AudioUrlResolver.ensureModern())
+        .catchError((e) {
+      debugPrint('Extractor init error (will retry on first use): $e');
+    });
+  }
   if (ConnectivityService.instance.online.value) {
     FeedService.instance.refreshAll();
   }
@@ -80,7 +82,9 @@ void main() async {
     if (now && !wasOnline) FeedService.instance.refreshAll();
     wasOnline = now;
   });
-  Future.delayed(const Duration(minutes: 3), YtDlpUpdateService.checkAndUpdate);
+  if (!isDesktopPlatform) {
+    Future.delayed(const Duration(minutes: 3), YtDlpUpdateService.checkAndUpdate);
+  }
   Future.delayed(const Duration(minutes: 1), () => CookieRefreshService.instance.refreshIfOlderThan(const Duration(hours: 12)));
 }
 

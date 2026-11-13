@@ -232,15 +232,7 @@ class _HeroState extends State<_Hero> {
             HistoryService.instance.tracks,
             ArtistMixService.instance.mixes,
           ]),
-          builder: (context, _) => AnimatedSize(
-            duration: AppMotion.medium,
-            curve: AppMotion.curve,
-            alignment: Alignment.topCenter,
-            child: AnimatedSwitcher(
-              duration: AppMotion.fast,
-              child: _card(context, playingSnap.data ?? false),
-            ),
-          ),
+          builder: (context, _) => _card(context, playingSnap.data ?? false),
         ),
       ),
     );
