@@ -11,6 +11,7 @@ import 'package:xtify_app/desktop/app_nav.dart';
 import 'package:xtify_app/desktop/desktop_keys.dart';
 import 'package:xtify_app/desktop/desktop_scope.dart';
 import 'package:xtify_app/desktop/desktop_shell.dart';
+import 'package:xtify_app/desktop/window_chrome.dart';
 import 'package:xtify_app/screens/home_screen.dart';
 import 'package:xtify_app/screens/search_screen.dart';
 import 'package:xtify_app/screens/library_screen.dart';
@@ -63,6 +64,7 @@ void main() async {
     debugPrint('Setup error: $e');
     rethrow;
   }
+  if (isDesktopPlatform) await WindowChrome.instance.init();
   runApp(const XtifyApp());
   AudioUrlResolver.ensureInitialized()
       .then((_) => AudioUrlResolver.ensureModern())
@@ -107,6 +109,14 @@ class XtifyApp extends StatelessWidget {
         theme: buildAppTheme(),
         themeMode: ThemeMode.dark,
         scrollBehavior: const XtifyScrollBehavior(),
+        builder: (context, child) {
+          final content = child ?? const SizedBox.shrink();
+          if (!isDesktopPlatform) return content;
+          final size = MediaQuery.sizeOf(context);
+          final wide =
+              size.width >= kWideMinWidth && size.height >= kWideMinHeight;
+          return WindowFrame(titleBar: !wide, child: content);
+        },
         home: const XtifyHome(),
         debugShowCheckedModeBanner: false,
       ),

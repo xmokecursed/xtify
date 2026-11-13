@@ -4,6 +4,7 @@ import '../bloc/search_bloc.dart';
 import '../screens/home_screen.dart';
 import '../screens/library_screen.dart';
 import '../screens/search_screen.dart';
+import '../services/audio_service.dart';
 import '../services/playlist_service.dart';
 import '../services/search_history_service.dart';
 import '../theme/app_theme.dart';
@@ -16,9 +17,33 @@ import 'desktop_keys.dart';
 import 'desktop_player_bar.dart';
 import 'desktop_scope.dart';
 import 'now_playing_panel.dart';
+import 'window_chrome.dart';
 
-class DesktopShell extends StatelessWidget {
+class DesktopShell extends StatefulWidget {
   const DesktopShell({super.key});
+
+  @override
+  State<DesktopShell> createState() => _DesktopShellState();
+}
+
+class _DesktopShellState extends State<DesktopShell> {
+  final ValueNotifier<int> _plays = XtifyAudioHandler.instance.userPlays;
+
+  @override
+  void initState() {
+    super.initState();
+    _plays.addListener(_openNowPlaying);
+  }
+
+  @override
+  void dispose() {
+    _plays.removeListener(_openNowPlaying);
+    super.dispose();
+  }
+
+  void _openNowPlaying() {
+    AppNav.instance.nowPlayingOpen.value = true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -121,9 +146,21 @@ class _Content extends StatelessWidget {
                   ),
                   ValueListenableBuilder<bool>(
                     valueListenable: nav.nowPlayingOpen,
-                    builder: (_, open, _) => open
-                        ? const _Region(order: 4, child: NowPlayingPanel())
-                        : const SizedBox.shrink(),
+                    builder: (_, open, _) => TweenAnimationBuilder<double>(
+                      tween: Tween<double>(end: open ? 1.0 : 0.0),
+                      duration: AppMotion.medium,
+                      curve: AppMotion.curve,
+                      child: const _Region(order: 4, child: NowPlayingPanel()),
+                      builder: (context, t, child) => t == 0
+                          ? const SizedBox.shrink()
+                          : ClipRect(
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                widthFactor: t,
+                                child: child,
+                              ),
+                            ),
+                    ),
                   ),
                 ],
               ),
@@ -169,9 +206,13 @@ class DesktopSidebar extends StatelessWidget {
       width: 76,
       child: Column(
         children: [
-          const SizedBox(height: 16),
-          const XtifyLogo(size: 40),
-          const SizedBox(height: 18),
+          const WindowDragArea(
+            child: SizedBox(
+              width: double.infinity,
+              height: 74,
+              child: Center(child: XtifyLogo(size: 40)),
+            ),
+          ),
           ValueListenableBuilder<int>(
             valueListenable: nav.tab,
             builder: (context, tab, _) => Column(
@@ -282,59 +323,58 @@ class DesktopTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nav = AppNav.instance;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 10, 16, 10),
-      child: Row(
-        children: [
-          ValueListenableBuilder<bool>(
-            valueListenable: nav.canGoBackNotifier,
-            builder: (context, can, _) => IconButton(
-              tooltip: 'Back (Esc)',
-              onPressed: can ? nav.back : null,
-              icon: const Icon(Icons.chevron_left_rounded, size: 26),
-              style: IconButton.styleFrom(
-                backgroundColor: AppColors.card,
-                disabledBackgroundColor: AppColors.card,
-                foregroundColor: Colors.white,
-                disabledForegroundColor: AppColors.textTertiary,
-              ),
-            ),
+    final controlsWidth =
+        WindowChrome.instance.active.value ? WindowControls.width : 0.0;
+    return Stack(
+      children: [
+        const Positioned.fill(child: WindowDragArea()),
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            8,
+            10,
+            controlsWidth > 0 ? controlsWidth + 8 : 16,
+            10,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: 560),
-                child: DesktopSearchField(),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              color: AppColors.card,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: 'Refresh home (F5)',
-                  icon: const Icon(Icons.refresh_rounded, size: 22),
-                  onPressed: nav.refreshFeed,
+          child: Row(
+            children: [
+              ValueListenableBuilder<bool>(
+                valueListenable: nav.canGoBackNotifier,
+                builder: (context, can, _) => IconButton(
+                  tooltip: 'Back (Esc)',
+                  onPressed: can ? nav.back : null,
+                  icon: const Icon(Icons.chevron_left_rounded, size: 26),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.card,
+                    disabledBackgroundColor: AppColors.card,
+                    foregroundColor: Colors.white,
+                    disabledForegroundColor: AppColors.textTertiary,
+                  ),
                 ),
-                IconButton(
-                  tooltip: 'Keyboard shortcuts (?)',
-                  icon: const Icon(Icons.keyboard_alt_outlined, size: 22),
-                  onPressed: () => showShortcutsHelp(context),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: 560),
+                    child: DesktopSearchField(),
+                  ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                tooltip: 'Refresh home (F5)',
+                onPressed: nav.refreshFeed,
+                icon: const Icon(Icons.refresh_rounded, size: 22),
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.card,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

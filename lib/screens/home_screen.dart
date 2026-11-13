@@ -207,108 +207,232 @@ class _BusyDot extends StatelessWidget {
   }
 }
 
-class _Hero extends StatelessWidget {
+class _Hero extends StatefulWidget {
   const _Hero();
 
   @override
+  State<_Hero> createState() => _HeroState();
+}
+
+class _HeroState extends State<_Hero> {
+  final XtifyAudioHandler _handler = XtifyAudioHandler.instance;
+  late final Stream<bool> _playing =
+      _handler.playbackState.map((s) => s.playing).distinct();
+
+  @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<Track>>(
-      valueListenable: HistoryService.instance.tracks,
-      builder: (context, history, _) {
-        final track = history.isEmpty ? null : history.first;
-        final buttonStyle = FilledButton.styleFrom(
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-          shape: const StadiumBorder(),
-        );
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.screen,
-            0,
-            AppSpacing.screen,
-            AppSpacing.section,
+    return StreamBuilder<bool>(
+      stream: _playing,
+      initialData: _handler.playbackState.valueOrNull?.playing ?? false,
+      builder: (context, playingSnap) => StreamBuilder(
+        stream: _handler.mediaItem,
+        initialData: _handler.mediaItem.valueOrNull,
+        builder: (context, _) => ListenableBuilder(
+          listenable: Listenable.merge([
+            HistoryService.instance.tracks,
+            ArtistMixService.instance.mixes,
+          ]),
+          builder: (context, _) => AnimatedSize(
+            duration: AppMotion.medium,
+            curve: AppMotion.curve,
+            alignment: Alignment.topCenter,
+            child: AnimatedSwitcher(
+              duration: AppMotion.fast,
+              child: _card(context, playingSnap.data ?? false),
+            ),
           ),
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 210),
-            padding: const EdgeInsets.fromLTRB(32, 24, 24, 24),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [AppColors.accent, AppColors.accentDeep],
+        ),
+      ),
+    );
+  }
+
+  ArtistMix? _mixFor(Track track) {
+    final artist = track.artist.toLowerCase();
+    for (final mix in ArtistMixService.instance.mixes.value) {
+      final name = mix.artist.toLowerCase();
+      if (name.isNotEmpty && mix.tracks.isNotEmpty && artist.contains(name)) {
+        return mix;
+      }
+    }
+    return null;
+  }
+
+  Widget _card(BuildContext context, bool playing) {
+    final current = _handler.currentTrack;
+    if (playing && current != null) {
+      final mix = _mixFor(current);
+      if (mix == null) {
+        return const SizedBox.shrink(key: ValueKey('hero-hidden'));
+      }
+      return _HeroCard(
+        key: ValueKey('hero-mix-${mix.artist}'),
+        eyebrow: 'KEEP IT GOING',
+        title: mix.title,
+        subtitle: '${mix.tracks.length} songs picked from what you play',
+        imageUrl: mix.imageUrl,
+        actions: [
+          FilledButton.icon(
+            style: _heroFilled,
+            onPressed: () => _playAll(context, mix.tracks),
+            icon: const Icon(Icons.play_arrow_rounded),
+            label: const Text('Play mix'),
+          ),
+          OutlinedButton(
+            style: _heroOutlined,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ArtistMixScreen(artist: mix.artist),
               ),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        track == null ? 'WELCOME' : 'JUMP BACK IN',
-                        style: const TextStyle(
-                          color: Color(0xCC000000),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        track?.title ?? 'Find something to play',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 30,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -1,
-                          height: 1.05,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        track == null
-                            ? 'Press Ctrl+K to search for songs and artists'
-                            : track.artist,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xCC000000),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      if (track == null)
-                        FilledButton.icon(
-                          style: buttonStyle,
-                          onPressed: AppNav.instance.focusSearch,
-                          icon: const Icon(Icons.search_rounded),
-                          label: const Text('Search'),
-                        )
-                      else
-                        FilledButton.icon(
-                          style: buttonStyle,
-                          onPressed: () => playTrackWithFeedback(context, track),
-                          icon: const Icon(Icons.play_arrow_rounded),
-                          label: const Text('Play'),
-                        ),
-                    ],
-                  ),
-                ),
-                if (track != null) ...[
-                  const SizedBox(width: 24),
-                  ArtImage(url: track.imageUrl, size: 162, radius: 14),
-                ],
-              ],
-            ),
+            child: const Text('Open'),
           ),
-        );
-      },
+        ],
+      );
+    }
+    final history = HistoryService.instance.tracks.value;
+    final track = current ?? (history.isEmpty ? null : history.first);
+    if (track == null) {
+      return _HeroCard(
+        key: const ValueKey('hero-welcome'),
+        eyebrow: 'WELCOME',
+        title: 'Find something to play',
+        subtitle: 'Press Ctrl+K to search for songs and artists',
+        imageUrl: null,
+        actions: [
+          FilledButton.icon(
+            style: _heroFilled,
+            onPressed: AppNav.instance.focusSearch,
+            icon: const Icon(Icons.search_rounded),
+            label: const Text('Search'),
+          ),
+        ],
+      );
+    }
+    return _HeroCard(
+      key: ValueKey('hero-resume-${track.id}'),
+      eyebrow: 'JUMP BACK IN',
+      title: track.title,
+      subtitle: track.artist,
+      imageUrl: track.imageUrl,
+      actions: [
+        FilledButton.icon(
+          style: _heroFilled,
+          onPressed: () => current != null
+              ? _handler.play()
+              : playTrackWithFeedback(context, track),
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: const Text('Play'),
+        ),
+      ],
+    );
+  }
+}
+
+final ButtonStyle _heroFilled = FilledButton.styleFrom(
+  backgroundColor: Colors.white,
+  foregroundColor: Colors.black,
+  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+  shape: const StadiumBorder(),
+);
+
+final ButtonStyle _heroOutlined = OutlinedButton.styleFrom(
+  foregroundColor: Colors.white,
+  side: const BorderSide(color: Color(0x44FFFFFF)),
+  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+  shape: const StadiumBorder(),
+);
+
+class _HeroCard extends StatelessWidget {
+  final String eyebrow;
+  final String title;
+  final String subtitle;
+  final String? imageUrl;
+  final List<Widget> actions;
+
+  const _HeroCard({
+    super.key,
+    required this.eyebrow,
+    required this.title,
+    required this.subtitle,
+    required this.imageUrl,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final art = imageUrl;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screen,
+        0,
+        AppSpacing.screen,
+        AppSpacing.section,
+      ),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 210),
+        padding: const EdgeInsets.fromLTRB(32, 24, 24, 24),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.hairline),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF2C2C30), Color(0xFF151517)],
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    eyebrow,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -1,
+                      height: 1.05,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Wrap(spacing: 10, runSpacing: 10, children: actions),
+                ],
+              ),
+            ),
+            if (art != null) ...[
+              const SizedBox(width: 24),
+              ArtImage(url: art, size: 162, radius: 14),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

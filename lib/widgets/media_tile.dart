@@ -151,7 +151,7 @@ class MediaTile extends StatelessWidget {
                                 width: 44,
                                 height: 44,
                                 decoration: const BoxDecoration(
-                                  color: AppColors.accent,
+                                  color: Colors.white,
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(

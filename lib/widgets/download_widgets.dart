@@ -40,7 +40,7 @@ class DownloadButton extends StatelessWidget {
               key: const ValueKey('done'), size: size, color: Colors.white);
           tip = 'Downloaded';
           onTap = () => say(
-                'Saved on this phone',
+                'Saved on this device',
                 action: SnackBarAction(
                   label: 'Remove',
                   onPressed: () => svc.remove(track.id),

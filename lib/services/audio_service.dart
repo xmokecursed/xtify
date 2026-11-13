@@ -40,6 +40,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   final ValueNotifier<bool> shuffleOn = ValueNotifier<bool>(false);
   final ValueNotifier<XtifyRepeat> repeat = ValueNotifier<XtifyRepeat>(XtifyRepeat.off);
   final ValueNotifier<double> volume = ValueNotifier<double>(1.0);
+  final ValueNotifier<int> userPlays = ValueNotifier<int>(0);
   double _volumeBeforeMute = 1.0;
 
   Track? get currentTrack => _currentTrack;
@@ -457,6 +458,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     _queue.add([mediaItem]);
     _mediaItem.add(mediaItem);
+    if (userInitiated) userPlays.value++;
 
     final errors = <String>[];
 

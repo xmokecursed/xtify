@@ -12,9 +12,6 @@ class AppColors {
 
   static const Color hairline = Color(0x1FFFFFFF);
   static const Color highlight = Color(0x14FFFFFF);
-
-  static const Color accent = Color(0xFF34D058);
-  static const Color accentDeep = Color(0xFF1E9E55);
 }
 
 class AppRadius {

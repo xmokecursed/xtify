@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/track_model.dart';
 import '../services/audio_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/download_widgets.dart';
 import '../widgets/favourite_button.dart';
 import '../widgets/media_tile.dart';
 import '../widgets/player_sheet.dart';
@@ -205,8 +206,25 @@ class _BarIcon extends StatelessWidget {
       iconSize: size,
       visualDensity: VisualDensity.compact,
       onPressed: onTap,
-      color: color ?? (active ? AppColors.accent : AppColors.textSecondary),
-      icon: Icon(icon),
+      color: color ?? (active ? Colors.white : AppColors.textSecondary),
+      icon: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          Icon(icon),
+          if (active)
+            const Positioned(
+              bottom: -8,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: SizedBox(width: 4, height: 4),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -296,10 +314,19 @@ class _RightControls extends StatelessWidget {
     final nav = AppNav.instance;
     return LayoutBuilder(
       builder: (context, c) {
-        final sliderWidth = (c.maxWidth - 4 * 48).clamp(0.0, 110.0).toDouble();
+        final sliderWidth = (c.maxWidth - 5 * 48).clamp(0.0, 110.0).toDouble();
         return Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
+            StreamBuilder<MediaItem?>(
+              stream: h.mediaItem,
+              initialData: h.mediaItem.valueOrNull,
+              builder: (_, _) {
+                final track = h.currentTrack;
+                if (track == null) return const SizedBox.shrink();
+                return DownloadButton(track: track, size: 22);
+              },
+            ),
             ValueListenableBuilder<bool>(
               valueListenable: nav.nowPlayingOpen,
               builder: (_, open, _) => _BarIcon(
