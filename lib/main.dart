@@ -33,7 +33,20 @@ import 'package:xtify_app/theme/app_theme.dart';
 import 'package:xtify_app/widgets/player_sheet.dart';
 import 'package:xtify_app/widgets/signin_banner.dart';
 
-void main() async {
+Future<void> main() async {
+  if (!isDesktopPlatform) return _start();
+  return runZoned(
+    _start,
+    zoneSpecification: ZoneSpecification(
+      print: (self, parent, zone, line) {
+        parent.print(zone, line);
+        XtifyAudioHandler.noteEngineLog(line);
+      },
+    ),
+  );
+}
+
+Future<void> _start() async {
   WidgetsFlutterBinding.ensureInitialized();
   DebugLog.install();
   PaintingBinding.instance.imageCache.maximumSize = 120;

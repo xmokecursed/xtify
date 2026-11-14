@@ -171,11 +171,17 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
+  static bool _engineLogSeen = false;
+
   static void noteEngineLog(String line) {
-    if (!isDesktopPlatform) return;
-    if (!line.startsWith('MPV: [error] ao/') && !line.startsWith('MPV: [fatal] ao/')) {
-      return;
+    if (!isDesktopPlatform || !line.startsWith('MPV: ')) return;
+    if (!_engineLogSeen) {
+      _engineLogSeen = true;
+      debugPrint('player: now watching the sound engine messages');
     }
+    final output =
+        line.startsWith('MPV: [error] ao/') || line.startsWith('MPV: [fatal] ao/');
+    if (!output || line.contains('feeding audio')) return;
     try {
       _instance?._engineFailed();
     } catch (_) {}
@@ -186,7 +192,8 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     _engineSuspect = true;
     if (_logRecovery?.isActive ?? false) return;
     debugPrint('player: the sound output failed, reopening it');
-    _logRecovery = Timer(const Duration(milliseconds: 800), () => _recoverCurrent());
+    _logRecovery = Timer(
+        const Duration(milliseconds: 800), () => _recoverCurrent(sameUrl: true));
   }
 
   void _showPaused() {
@@ -210,7 +217,8 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   Duration _wdPos = Duration.zero;
   DateTime _wdAt = DateTime.now();
 
-  Future<void> _recoverCurrent({Duration? at, bool force = false}) async {
+  Future<void> _recoverCurrent(
+      {Duration? at, bool force = false, bool sameUrl = false}) async {
     final t = _currentTrack;
     if (t == null || _recovering || !_sourceLoaded) return;
     if (isDesktopPlatform) {
@@ -266,7 +274,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
           }
         }
       }
-      AudioUrlResolver.clearCache(t.id);
+      if (!sameUrl) AudioUrlResolver.clearCache(t.id);
       await playTrack(t, userInitiated: false, keepContext: true, startAt: pos);
     } catch (e) {
       debugPrint('recovery failed: ${_short(e)}');
@@ -479,6 +487,11 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     if (_player.hasNext) {
       final waiting = _preloaded;
       if (isDesktopPlatform && waiting != null && _engineStale) {
+        final queued = _queuedUrls[waiting.id];
+        if (queued != null) {
+          AudioUrlResolver.markWorking(
+              waiting.id, AudioUrlResolver.preferredStrategy, queued);
+        }
         await playTrack(waiting, userInitiated: false, keepContext: true);
         return;
       }
