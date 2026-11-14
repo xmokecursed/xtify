@@ -13,6 +13,7 @@ import '../widgets/layout.dart';
 import '../widgets/pressable.dart';
 import '../widgets/signin_banner.dart';
 import 'app_nav.dart';
+import 'audio_stalled_strip.dart';
 import 'desktop_keys.dart';
 import 'desktop_player_bar.dart';
 import 'desktop_scope.dart';
@@ -101,7 +102,7 @@ class _Banners extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [DownloadBanner(), SignInStrip()],
+        children: [DownloadBanner(), AudioStalledStrip(), SignInStrip()],
       ),
     );
   }

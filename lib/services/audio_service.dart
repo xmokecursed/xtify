@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import '../desktop/desktop_scope.dart';
 import '../models/track_model.dart';
 import '../services/audio_url_resolver.dart';
 import '../services/connectivity_service.dart';
@@ -18,7 +19,23 @@ import 'package:rxdart/rxdart.dart';
 enum XtifyRepeat { off, all, one }
 
 class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
-  final _player = AudioPlayer();
+  AudioPlayer _player = AudioPlayer();
+  final List<StreamSubscription<Object?>> _playerSubs = [];
+  DateTime _engineSince = DateTime.now();
+  bool _engineSuspect = false;
+  bool _userPaused = false;
+  Duration _recoverFrom = Duration.zero;
+  String? _recoverId;
+  Timer? _logRecovery;
+  final ValueNotifier<bool> stalled = ValueNotifier<bool>(false);
+  static const List<Duration> _outputRetryDelays = [
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+    Duration(seconds: 6),
+    Duration(seconds: 8),
+    Duration(seconds: 8),
+  ];
   static XtifyAudioHandler? _instance;
   final BehaviorSubject<MediaItem?> _mediaItem = BehaviorSubject<MediaItem?>();
   final BehaviorSubject<List<MediaItem>> _queue = BehaviorSubject<List<MediaItem>>.seeded([]);
@@ -61,68 +78,128 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
   XtifyAudioHandler() {
     _instance = this;
-    _init().catchError((e) {
-      if (bool.fromEnvironment('dart.vm.product') == false) {
-        debugPrint('Audio handler initialization error: $e');
-      }
-    });
-
-    _player.durationStream.listen((duration) {
-      final current = _mediaItem.valueOrNull;
-      if (current != null) {
-        final updated = current.copyWith(duration: duration);
-        _mediaItem.add(updated);
-      }
-    });
-
-    _player.processingStateStream.listen((state) {
-      if (state == ProcessingState.completed) {
-        if (DateTime.now().difference(_lastSongStart) < const Duration(seconds: 4)) {
-          debugPrint('player: ignored a stale "completed" right after a song started');
-          return;
-        }
-        if (repeat.value == XtifyRepeat.one) {
-          _player.seek(Duration.zero).then((_) => _player.play());
-          return;
-        }
-        skipToNext().catchError((Object e) {
-          debugPrint('auto-advance failed: $e');
-        });
-      }
-    });
+    _bindPlayer();
     _watchdogTimer = Timer.periodic(const Duration(seconds: 4), (_) => _watchdog());
-    _player.positionStream.listen(_onPosition);
-    _player.currentIndexStream.listen(_onIndexChanged);
-    _player.errorStream.listen((error) {
-      debugPrint('Audio player error: $error');
-      final current = _mediaItem.valueOrNull;
-      final videoId = current?.extras?['videoId'] as String?;
-      if (videoId != null && videoId.isNotEmpty) {
-        AudioUrlResolver.clearCache(videoId);
-      }
-      if (_settingSource) return;
-      try {
-        final idx = error.index;
-        final cur = _player.currentIndex;
-        if (idx == null || idx == cur) {
-          debugPrint('current song failed, reloading it');
-          _recoverCurrent();
-          return;
+  }
+
+  void _bindPlayer() {
+    final player = _player;
+    _playerSubs.addAll([
+      player.playbackEventStream
+          .map(_transformEvent)
+          .listen((state) => playbackState.add(state)),
+      player.durationStream.listen((duration) {
+        final current = _mediaItem.valueOrNull;
+        if (current != null) {
+          final updated = current.copyWith(duration: duration);
+          _mediaItem.add(updated);
         }
-        if (idx >= _player.sequence.length) return;
-        final item = _player.sequence[idx].tag as MediaItem?;
-        final track = item == null ? null : _tracksById[item.id];
-        if (track == null) return;
-        AudioUrlResolver.clearCache(track.id);
-        _player.removeAudioSourceAt(idx).catchError((Object e) {});
-        _nextQueued = false;
-        _preloaded = null;
-        _preloadedFromUser = false;
-        _publishQueue();
-      } catch (e) {
-        debugPrint('error recovery failed: $e');
-      }
-    });
+      }),
+      player.processingStateStream.listen((state) {
+        if (state == ProcessingState.completed) {
+          if (DateTime.now().difference(_lastSongStart) < const Duration(seconds: 4)) {
+            debugPrint('player: ignored a stale "completed" right after a song started');
+            return;
+          }
+          if (repeat.value == XtifyRepeat.one) {
+            _player.seek(Duration.zero).then((_) => _player.play());
+            return;
+          }
+          skipToNext().catchError((Object e) {
+            debugPrint('auto-advance failed: $e');
+          });
+        }
+      }),
+      player.positionStream.listen(_onPosition),
+      player.currentIndexStream.listen(_onIndexChanged),
+      player.errorStream.listen((error) {
+        debugPrint('Audio player error: $error');
+        final current = _mediaItem.valueOrNull;
+        final videoId = current?.extras?['videoId'] as String?;
+        if (videoId != null && videoId.isNotEmpty) {
+          AudioUrlResolver.clearCache(videoId);
+        }
+        if (_settingSource) return;
+        try {
+          final idx = error.index;
+          final cur = _player.currentIndex;
+          if (idx == null || idx == cur) {
+            debugPrint('current song failed, reloading it');
+            _recoverCurrent();
+            return;
+          }
+          if (idx >= _player.sequence.length) return;
+          final item = _player.sequence[idx].tag as MediaItem?;
+          final track = item == null ? null : _tracksById[item.id];
+          if (track == null) return;
+          AudioUrlResolver.clearCache(track.id);
+          _player.removeAudioSourceAt(idx).catchError((Object e) {});
+          _nextQueued = false;
+          _preloaded = null;
+          _preloadedFromUser = false;
+          _publishQueue();
+        } catch (e) {
+          debugPrint('error recovery failed: $e');
+        }
+      }),
+    ]);
+  }
+
+  bool get _engineStale =>
+      _engineSuspect ||
+      DateTime.now().difference(_engineSince) > const Duration(seconds: 20);
+
+  Future<void> _rebuildPlayer() async {
+    final old = _player;
+    for (final sub in _playerSubs) {
+      unawaited(sub.cancel());
+    }
+    _playerSubs.clear();
+    _player = AudioPlayer(handleInterruptions: false);
+    _engineSince = DateTime.now();
+    _engineSuspect = false;
+    _nextQueued = false;
+    _bindPlayer();
+    debugPrint('player: opened a fresh audio engine');
+    unawaited(old.dispose().catchError((Object e) {
+      debugPrint('player: old audio engine did not close cleanly: ${_short(e)}');
+    }));
+    try {
+      await _player.setVolume(volume.value);
+    } catch (e) {
+      debugPrint('player: could not restore the volume: ${_short(e)}');
+    }
+  }
+
+  static void noteEngineLog(String line) {
+    if (!isDesktopPlatform) return;
+    if (!line.startsWith('MPV: [error] ao/') && !line.startsWith('MPV: [fatal] ao/')) {
+      return;
+    }
+    try {
+      _instance?._engineFailed();
+    } catch (_) {}
+  }
+
+  void _engineFailed() {
+    if (_currentTrack == null || !_sourceLoaded || _recovering || _settingSource) return;
+    _engineSuspect = true;
+    if (_logRecovery?.isActive ?? false) return;
+    debugPrint('player: the sound output failed, reopening it');
+    _logRecovery = Timer(const Duration(milliseconds: 800), () => _recoverCurrent());
+  }
+
+  void _showPaused() {
+    playbackState.add(playbackState.value.copyWith(
+        processingState: AudioProcessingState.ready, playing: false));
+  }
+
+  void _stopAfterFailure() {
+    _gaveUp = true;
+    stalled.value = true;
+    unawaited(_player.pause().catchError((Object e) {}));
+    playbackState.add(playbackState.value.copyWith(
+        processingState: AudioProcessingState.idle, playing: false));
   }
 
   Timer? _watchdogTimer;
@@ -136,24 +213,64 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> _recoverCurrent({Duration? at, bool force = false}) async {
     final t = _currentTrack;
     if (t == null || _recovering || !_sourceLoaded) return;
+    if (isDesktopPlatform) {
+      _engineSuspect = true;
+      if (_userPaused && !force) {
+        _recoverFrom = at ?? _player.position;
+        _recoverId = t.id;
+        _gaveUp = true;
+        return;
+      }
+    }
     final now = DateTime.now();
     _recoveryStreak = now.difference(_lastRecovery) < const Duration(seconds: 30)
         ? _recoveryStreak + 1
         : 0;
-    if (!force && _recoveryStreak >= 3) {
-      if (!_gaveUp) debugPrint('recovery: giving up after $_recoveryStreak quick failures, press play to retry');
+    final limit = isDesktopPlatform ? _outputRetryDelays.length : 3;
+    if (!force && _recoveryStreak >= limit) {
+      if (!_gaveUp) {
+        debugPrint('recovery: giving up after $_recoveryStreak quick failures, press play to retry');
+        if (isDesktopPlatform) _stopAfterFailure();
+      }
       _gaveUp = true;
       return;
     }
+    final live = _player.position;
+    final remembered = _recoverId == t.id ? _recoverFrom : Duration.zero;
+    final pos = at ??
+        (isDesktopPlatform &&
+                (_gaveUp || _recoveryStreak > 0) &&
+                remembered > live
+            ? remembered
+            : live);
+    _recoverFrom = pos;
+    _recoverId = t.id;
     _gaveUp = false;
     _recovering = true;
     _lastRecovery = now;
-    final pos = at ?? _player.position;
+    final token = _playToken;
     try {
+      if (isDesktopPlatform) {
+        stalled.value = false;
+        playbackState.add(playbackState.value.copyWith(
+            processingState: AudioProcessingState.loading, playing: true));
+        if (!force) {
+          final wait = _outputRetryDelays[_recoveryStreak];
+          debugPrint('recovery: trying the sound output again in ${wait.inSeconds}s (attempt ${_recoveryStreak + 1})');
+          await Future<void>.delayed(wait);
+          if (token != _playToken || _currentTrack?.id != t.id || !_sourceLoaded) return;
+          if (_userPaused) {
+            _gaveUp = true;
+            _showPaused();
+            return;
+          }
+        }
+      }
       AudioUrlResolver.clearCache(t.id);
       await playTrack(t, userInitiated: false, keepContext: true, startAt: pos);
     } catch (e) {
       debugPrint('recovery failed: ${_short(e)}');
+      if (isDesktopPlatform) _stopAfterFailure();
     } finally {
       _recovering = false;
       _wdAt = DateTime.now();
@@ -195,12 +312,6 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   BehaviorSubject<List<MediaItem>> get queue => _queue;
-
-  Future<void> _init() async {
-    _player.playbackEventStream.map(_transformEvent).listen((state) {
-      playbackState.add(state);
-    });
-  }
 
   PlaybackState _transformEvent(PlaybackEvent event) {
     return PlaybackState(
@@ -245,6 +356,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> play() async {
+    _userPaused = false;
     final t = _currentTrack;
     if (!_sourceLoaded && t != null) {
       playbackState.add(playbackState.value.copyWith(
@@ -257,7 +369,9 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       }
       return;
     }
-    if (_sourceLoaded && _player.processingState == ProcessingState.idle) {
+    if (_sourceLoaded &&
+        (_player.processingState == ProcessingState.idle ||
+            (isDesktopPlatform && _gaveUp))) {
       await _recoverCurrent(force: true);
       return;
     }
@@ -266,13 +380,16 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> pause() async {
+    _userPaused = true;
     await _player.pause();
     _savePosition(_player.position);
   }
 
   @override
   Future<void> seek(Duration position) async {
-    if (_sourceLoaded && _player.processingState == ProcessingState.idle) {
+    if (_sourceLoaded &&
+        (_player.processingState == ProcessingState.idle ||
+            (isDesktopPlatform && _gaveUp))) {
       return _recoverCurrent(at: position, force: true);
     }
     if (_sourceLoaded) return _player.seek(position);
@@ -284,6 +401,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> stop() async {
     await _player.stop();
     _sourceLoaded = false;
+    stalled.value = false;
   }
 
   void _savePosition(Duration pos) {
@@ -359,6 +477,11 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> skipToNext() async {
     if (_player.hasNext) {
+      final waiting = _preloaded;
+      if (isDesktopPlatform && waiting != null && _engineStale) {
+        await playTrack(waiting, userInitiated: false, keepContext: true);
+        return;
+      }
       await _player.seekToNext();
       return;
     }
@@ -430,6 +553,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       String? searchedFor}) async {
     final token = ++_playToken;
     _gaveUp = false;
+    stalled.value = false;
     if (_preloaded != null && _preloadedFromUser) _userQueue = [_preloaded!, ..._userQueue];
     _preloaded = null;
     _preloadedFromUser = false;
@@ -459,6 +583,11 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     _queue.add([mediaItem]);
     _mediaItem.add(mediaItem);
     if (userInitiated) userPlays.value++;
+
+    if (isDesktopPlatform && _sourceLoaded && _engineStale) {
+      await _rebuildPlayer();
+      if (token != _playToken) return;
+    }
 
     final errors = <String>[];
 
@@ -530,6 +659,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       debugPrint('setAudioSource ($label) took ${sw.elapsedMilliseconds}ms');
       if (token != _playToken) return false;
       _sourceLoaded = true;
+      _userPaused = false;
       _lastSongStart = DateTime.now();
       _player.play();
       debugPrint('playing via $label');
@@ -723,7 +853,9 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
       final item = createMediaItem(next);
       _tracksById[next.id] = next;
       _queuedUrls[next.id] = resolved;
+      final engine = _player;
       await _removeWaiting();
+      if (!identical(engine, _player)) return;
       await _player.addAudioSource(
         audioSourceFor(resolved.url, headers: resolved.headers, tag: item),
       );
@@ -1026,6 +1158,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Future<void> dispose() {
     _watchdogTimer?.cancel();
+    _logRecovery?.cancel();
     return _player.dispose();
   }
 }

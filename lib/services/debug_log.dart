@@ -19,6 +19,7 @@ class DebugLog {
     debugPrint = (String? message, {int? wrapWidth}) {
       if (message != null) add(message);
       original(message == null ? null : _color(message), wrapWidth: wrapWidth);
+      if (message != null) XtifyAudioHandler.noteEngineLog(message);
     };
     final previousOnError = FlutterError.onError;
     final seen = <String>{};

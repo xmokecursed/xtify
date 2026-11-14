@@ -119,7 +119,11 @@ class XtifyApp extends StatelessWidget {
           final size = MediaQuery.sizeOf(context);
           final wide =
               size.width >= kWideMinWidth && size.height >= kWideMinHeight;
-          return WindowFrame(titleBar: !wide, child: content);
+          final hidden = size.width < 200 || size.height < 200;
+          return Offstage(
+            offstage: hidden,
+            child: WindowFrame(titleBar: !wide, child: content),
+          );
         },
         home: const XtifyHome(),
         debugShowCheckedModeBanner: false,
@@ -128,16 +132,28 @@ class XtifyApp extends StatelessWidget {
   }
 }
 
-class XtifyHome extends StatelessWidget {
+class XtifyHome extends StatefulWidget {
   const XtifyHome({super.key});
+
+  @override
+  State<XtifyHome> createState() => _XtifyHomeState();
+}
+
+class _XtifyHomeState extends State<XtifyHome> {
+  bool? _wide;
 
   @override
   Widget build(BuildContext context) {
     if (!isDesktopPlatform) return const _MobileHome();
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide = constraints.maxWidth >= kWideMinWidth &&
-            constraints.maxHeight >= kWideMinHeight;
+        final visible =
+            constraints.maxWidth >= 200 && constraints.maxHeight >= 200;
+        if (visible || _wide == null) {
+          _wide = constraints.maxWidth >= kWideMinWidth &&
+              constraints.maxHeight >= kWideMinHeight;
+        }
+        final wide = _wide!;
         return DesktopScope(
           wide: wide,
           child: DesktopKeyboard(

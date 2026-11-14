@@ -221,6 +221,9 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
     case WM_NCCALCSIZE:
+      if (IsIconic(hwnd)) {
+        break;
+      }
       if (wparam != FALSE) {
         return CalculateClientArea(
             hwnd, &reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam)->rgrc[0]);
