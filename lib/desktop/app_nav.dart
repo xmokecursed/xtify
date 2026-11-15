@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../screens/lyrics_screen.dart';
 import '../screens/playlist_screen.dart';
 import '../screens/queue_screen.dart';
 import '../services/feed_service.dart';
@@ -34,6 +35,7 @@ class AppNav {
   final ValueNotifier<int> tab = ValueNotifier<int>(homeTab);
   final ValueNotifier<bool> nowPlayingOpen = ValueNotifier<bool>(false);
   final ValueNotifier<bool> canGoBackNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> lyricsOpen = ValueNotifier<bool>(false);
   final TextEditingController searchController = TextEditingController();
   final FocusNode searchFocus = FocusNode(debugLabel: 'Xtify search');
   late final NavigatorObserver observer = _RouteWatcher(_syncBack);
@@ -108,6 +110,28 @@ class AppNav {
     );
   }
 
+  void openLyrics() {
+    final nav = navigator;
+    if (nav == null) return;
+    if (topRoute()?.settings.name == 'lyrics') return;
+    nav.push(
+      MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'lyrics'),
+        builder: (_) => const LyricsScreen(),
+      ),
+    );
+  }
+
+  void toggleLyrics() {
+    final nav = navigator;
+    if (nav == null) return;
+    if (topRoute()?.settings.name == 'lyrics') {
+      nav.pop();
+      return;
+    }
+    openLyrics();
+  }
+
   void toggleNowPlaying() {
     nowPlayingOpen.value = !nowPlayingOpen.value;
   }
@@ -123,6 +147,8 @@ class AppNav {
       final nav = contentKey.currentState;
       final can = nav != null && nav.canPop();
       if (canGoBackNotifier.value != can) canGoBackNotifier.value = can;
+      final onLyrics = topRoute()?.settings.name == 'lyrics';
+      if (lyricsOpen.value != onLyrics) lyricsOpen.value = onLyrics;
     });
   }
 

@@ -314,7 +314,7 @@ class _RightControls extends StatelessWidget {
     final nav = AppNav.instance;
     return LayoutBuilder(
       builder: (context, c) {
-        final sliderWidth = (c.maxWidth - 5 * 48).clamp(0.0, 110.0).toDouble();
+        final sliderWidth = (c.maxWidth - 6 * 48).clamp(0.0, 110.0).toDouble();
         return Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
@@ -334,6 +334,15 @@ class _RightControls extends StatelessWidget {
                 tooltip: 'Now playing panel (N)',
                 active: open,
                 onTap: nav.toggleNowPlaying,
+              ),
+            ),
+            ValueListenableBuilder<bool>(
+              valueListenable: nav.lyricsOpen,
+              builder: (_, open, _) => _BarIcon(
+                icon: Icons.lyrics_rounded,
+                tooltip: 'Lyrics (L)',
+                active: open,
+                onTap: nav.toggleLyrics,
               ),
             ),
             ValueListenableBuilder<List<Track>>(

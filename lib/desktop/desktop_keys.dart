@@ -101,6 +101,7 @@ KeyEventResult _handleKey(BuildContext context, KeyEvent event) {
     if (key == LogicalKeyboardKey.slash) return done(nav.focusSearch);
     if (key == LogicalKeyboardKey.keyM) return done(h.toggleMute);
     if (key == LogicalKeyboardKey.keyQ) return done(nav.toggleQueue);
+    if (key == LogicalKeyboardKey.keyL) return done(nav.toggleLyrics);
     if (key == LogicalKeyboardKey.keyN) return done(nav.toggleNowPlaying);
   }
   if (first && event.character == '?') {
@@ -172,6 +173,7 @@ class _ShortcutsDialog extends StatelessWidget {
         ('Song options', 'Menu key  or  Shift + F10'),
         ('Back', 'Esc  or  Alt + ←'),
         ('Queue', 'Q'),
+        ('Lyrics', 'L'),
         ('Now playing panel', 'N'),
         ('This list', '?  or  F1'),
       ],

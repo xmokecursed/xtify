@@ -2,6 +2,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import '../services/audio_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/lyrics_section.dart';
 import '../widgets/media_tile.dart';
 import '../widgets/player_sheet.dart';
 import '../widgets/pressable.dart';
@@ -108,6 +109,8 @@ class NowPlayingPanel extends StatelessWidget {
                 const AutoQueueNotice(),
                 const SizedBox(height: 8),
                 const _UpNext(),
+                const SizedBox(height: 24),
+                const LyricsSection(),
               ],
             ],
           );

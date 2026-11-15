@@ -8,6 +8,7 @@ import '../screens/queue_screen.dart';
 import '../models/track_model.dart';
 import '../theme/app_theme.dart';
 import 'favourite_button.dart';
+import 'lyrics_section.dart';
 import 'playlist_sheets.dart';
 import 'signin_banner.dart';
 import 'package:flutter/material.dart';
@@ -473,6 +474,8 @@ class _PlayerSheetState extends State<PlayerSheet> {
               );
             },
           ),
+          const SizedBox(height: 28),
+          const LyricsSection(titleSize: 18),
         ],
       ),
     );
