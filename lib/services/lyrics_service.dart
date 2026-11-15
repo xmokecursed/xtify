@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import '../models/track_model.dart';
 import 'artist_credit.dart';
 import 'connectivity_service.dart';
 
@@ -50,6 +51,24 @@ class LyricsQuery {
     required this.artist,
     this.seconds = 0,
   });
+
+  factory LyricsQuery.ofTrack(Track track) {
+    var total = 0;
+    for (final part in track.duration.split(':')) {
+      final value = int.tryParse(part.trim());
+      if (value == null) {
+        total = 0;
+        break;
+      }
+      total = total * 60 + value;
+    }
+    return LyricsQuery(
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      seconds: total,
+    );
+  }
 }
 
 class _Held {
@@ -72,10 +91,12 @@ class LyricsService {
   static final LyricsService instance = LyricsService._();
 
   static const String _host = 'lrclib.net';
+  static const String _cacheName = 'lyrics';
+  static const String _savedName = 'lyrics_saved';
   static const String _agent =
       'Xtify/1.0.0 (https://github.com/xmokecursed/xtify)';
   static const int _memoryCap = 40;
-  static const int _diskCap = 300;
+  static const int _diskCap = 1000;
   static const int _toleranceSeconds = 8;
   static const Duration _spacing = Duration(milliseconds: 400);
   static const Duration _missTtl = Duration(hours: 24);
@@ -107,8 +128,48 @@ class LyricsService {
   Future<void> _tail = Future<void>.value();
   DateTime _pausedUntil = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastCall = DateTime.fromMillisecondsSinceEpoch(0);
-  Directory? _dir;
+  final Map<String, Directory> _dirs = <String, Directory>{};
+  final StreamController<String> _stored = StreamController<String>.broadcast();
   int _writes = 0;
+
+  Stream<String> get onStored => _stored.stream;
+
+  LyricsResult? peekNow(String key) => _fresh(key)?.result;
+
+  Future<LyricsResult?> peek(String key) async {
+    final held = _fresh(key);
+    if (held != null) return held.result;
+    final found = await _read(_savedName, key) ?? await _read(_cacheName, key);
+    if (found != null) _remember(key, found);
+    return found;
+  }
+
+  Future<void> keep(String key, LyricsResult result) async {
+    if (result.status != LyricsStatus.found &&
+        result.status != LyricsStatus.instrumental) {
+      return;
+    }
+    await _write(_savedName, key, result);
+  }
+
+  Future<void> forget(String key) async {
+    final dir = await _folder(_savedName);
+    if (dir == null) return;
+    try {
+      final file = _fileFor(dir, key);
+      if (await file.exists()) await file.delete();
+    } catch (e) {
+      debugPrint('lyrics saved copy delete failed: $e');
+    }
+  }
+
+  static String plainText(LyricsResult result) {
+    if (result.status != LyricsStatus.found) return '';
+    final lines = result.isSynced
+        ? <String>[for (final l in result.synced) l.text]
+        : result.plain;
+    return lines.join('\n').trim();
+  }
 
   Future<LyricsResult> load(LyricsQuery query, {bool force = false}) {
     final running = _running[query.id];
@@ -153,7 +214,7 @@ class LyricsService {
           (!force || held.result.status != LyricsStatus.notFound)) {
         return held.result;
       }
-      final stored = await _readDisk(key);
+      final stored = await _read(_savedName, key) ?? await _read(_cacheName, key);
       if (stored != null && (!force || stored.status != LyricsStatus.notFound)) {
         _remember(key, stored);
         return stored;
@@ -178,7 +239,8 @@ class LyricsService {
       }
       if (result.settled) {
         _remember(key, result);
-        unawaited(_writeDisk(key, result));
+        await _write(_cacheName, key, result);
+        if (result.status != LyricsStatus.notFound) _stored.add(key);
       }
       return result;
     } catch (e) {
@@ -380,14 +442,14 @@ class LyricsService {
     return out;
   }
 
-  Future<Directory?> _folder() async {
-    final known = _dir;
+  Future<Directory?> _folder(String name) async {
+    final known = _dirs[name];
     if (known != null) return known;
     try {
       final base = await getApplicationSupportDirectory();
-      final dir = Directory('${base.path}${Platform.pathSeparator}lyrics');
+      final dir = Directory('${base.path}${Platform.pathSeparator}$name');
       if (!await dir.exists()) await dir.create(recursive: true);
-      _dir = dir;
+      _dirs[name] = dir;
       return dir;
     } catch (e) {
       debugPrint('lyrics cache folder failed: $e');
@@ -400,8 +462,8 @@ class LyricsService {
     return File('${dir.path}${Platform.pathSeparator}$safe.json');
   }
 
-  Future<LyricsResult?> _readDisk(String key) async {
-    final dir = await _folder();
+  Future<LyricsResult?> _read(String name, String key) async {
+    final dir = await _folder(name);
     if (dir == null) return null;
     try {
       final file = _fileFor(dir, key);
@@ -436,8 +498,8 @@ class LyricsService {
     }
   }
 
-  Future<void> _writeDisk(String key, LyricsResult result) async {
-    final dir = await _folder();
+  Future<void> _write(String name, String key, LyricsResult result) async {
+    final dir = await _folder(name);
     if (dir == null) return;
     try {
       final data = <String, Object>{
@@ -453,7 +515,7 @@ class LyricsService {
         'p': result.plain,
       };
       await _fileFor(dir, key).writeAsString(json.encode(data));
-      if (++_writes % 25 == 1) unawaited(_trim(dir));
+      if (name == _cacheName && ++_writes % 25 == 1) unawaited(_trim(dir));
     } catch (e) {
       debugPrint('lyrics cache write failed: $e');
     }

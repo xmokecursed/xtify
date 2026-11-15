@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track_model.dart';
 import 'audio_url_resolver.dart';
+import 'lyrics_service.dart';
 import 'playlist_service.dart';
 
 class DownloadedItem {
@@ -250,6 +251,7 @@ class DownloadService {
       items.value = next;
       await _saveItems();
     }
+    await LyricsService.instance.forget(id);
     await PlaylistService.instance.removeTrack(PlaylistService.downloadsId, id);
   }
 
@@ -306,6 +308,7 @@ class DownloadService {
 
   Future<void> _download(Track t) async {
     final dir = await _dir();
+    final lyrics = LyricsService.instance.load(LyricsQuery.ofTrack(t));
     for (var i = 0;
         i < 60 && AudioUrlResolver.isBusy && !AudioUrlResolver.canLookUpDirectly(t.id);
         i++) {
@@ -347,7 +350,12 @@ class DownloadService {
     }
     if (path == null) throw Exception(errors.join(' | '));
 
-    final cover = await _writeTags(t, path);
+    final found = await lyrics.timeout(
+      const Duration(seconds: 25),
+      onTimeout: () => const LyricsResult(LyricsStatus.failed),
+    );
+    await LyricsService.instance.keep(t.id, found);
+    final cover = await _writeTags(t, path, LyricsService.plainText(found));
 
     final len = await File(path).length();
     items.value = {
@@ -449,7 +457,7 @@ class DownloadService {
     }
   }
 
-  Future<String> _writeTags(Track t, String path) async {
+  Future<String> _writeTags(Track t, String path, String lyrics) async {
     TagLibFile? file;
     var coverPath = '';
     try {
@@ -475,12 +483,17 @@ class DownloadService {
       if (cover != null) coverPath = await _saveCover(t.id, cover, mime);
       file = await TagLibFile.openAsync(path, writeAccess: true);
       if (file == null) return coverPath;
+      if (lyrics.isNotEmpty) {
+        final props = <String, List<String>>{...file.properties};
+        props[TagProperties.lyrics] = [lyrics];
+        file.setProperties(props);
+      }
       file.title = t.title;
       if (t.artist.isNotEmpty) file.artist = t.artist;
       if (t.album.isNotEmpty) file.album = t.album;
       if (cover != null) file.setCover(data: cover, mimeType: mime);
       final ok = file.save();
-      debugPrint('tags for ${t.id}: ${ok ? 'saved' : 'not saved'}${cover == null ? ', no cover' : ''}');
+      debugPrint('tags for ${t.id}: ${ok ? 'saved' : 'not saved'}${cover == null ? ', no cover' : ''}${lyrics.isEmpty ? ', no lyrics' : ', with lyrics'}');
     } catch (e) {
       debugPrint('tagging failed for ${t.id}: $e');
     } finally {

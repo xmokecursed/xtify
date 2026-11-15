@@ -60,6 +60,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
             ),
           ),
           body: Stack(
+            fit: StackFit.expand,
             children: [
               Positioned.fill(
                 child: AnimatedContainer(

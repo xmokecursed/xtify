@@ -18,6 +18,7 @@ class LyricsController extends ChangeNotifier {
 
   final bool follow;
   StreamSubscription<MediaItem?>? _sub;
+  StreamSubscription<String>? _storedSub;
   Timer? _delay;
   LyricsQuery? _query;
   LyricsPhase _phase = LyricsPhase.idle;
@@ -38,6 +39,9 @@ class LyricsController extends ChangeNotifier {
 
   void start() {
     _sub ??= XtifyAudioHandler.instance.mediaItem.listen(_onItem);
+    _storedSub ??= LyricsService.instance.onStored.listen((id) {
+      if (id == _query?.id) _showCached();
+    });
   }
 
   void _onItem(MediaItem? item) {
@@ -63,21 +67,39 @@ class LyricsController extends ChangeNotifier {
     _title = item.title;
     _artist = item.artist ?? '';
     _tint = _hashTint(item.id);
+    if (follow) {
+      _phase = LyricsPhase.loading;
+    } else {
+      final known = LyricsService.instance.peekNow(item.id);
+      if (known != null &&
+          (known.status == LyricsStatus.found ||
+              known.status == LyricsStatus.instrumental)) {
+        _result = known;
+        _phase = LyricsPhase.ready;
+      }
+    }
     notifyListeners();
     _loadTint(item.id, item.artUri?.toString() ?? '');
     if (follow) {
       if (_first) {
-        request();
+        _run(false);
       } else {
-        _delay = Timer(const Duration(milliseconds: 700), request);
+        _delay = Timer(const Duration(milliseconds: 700), () => _run(false));
       }
+    } else {
+      _showCached();
     }
     _first = false;
   }
 
   Future<void> request({bool force = false}) async {
+    if (_query == null || _phase == LyricsPhase.loading) return;
+    await _run(force);
+  }
+
+  Future<void> _run(bool force) async {
     final query = _query;
-    if (query == null || _phase == LyricsPhase.loading) return;
+    if (query == null) return;
     _delay?.cancel();
     final token = ++_token;
     _phase = LyricsPhase.loading;
@@ -85,6 +107,22 @@ class LyricsController extends ChangeNotifier {
     final out = await LyricsService.instance.load(query, force: force);
     if (_disposed || token != _token) return;
     _result = out;
+    _phase = LyricsPhase.ready;
+    notifyListeners();
+  }
+
+  Future<void> _showCached() async {
+    final query = _query;
+    if (query == null || follow || _phase != LyricsPhase.idle) return;
+    final token = _token;
+    final cached = await LyricsService.instance.peek(query.id);
+    if (_disposed || token != _token || _phase != LyricsPhase.idle) return;
+    if (cached == null ||
+        (cached.status != LyricsStatus.found &&
+            cached.status != LyricsStatus.instrumental)) {
+      return;
+    }
+    _result = cached;
     _phase = LyricsPhase.ready;
     notifyListeners();
   }
@@ -101,6 +139,7 @@ class LyricsController extends ChangeNotifier {
     _disposed = true;
     _delay?.cancel();
     _sub?.cancel();
+    _storedSub?.cancel();
     super.dispose();
   }
 }
