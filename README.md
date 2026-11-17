@@ -99,6 +99,8 @@ Most songs play without it. YouTube sometimes refuses requests that don't look s
 
 [![Architecture diagram of xmokecursed/xtify](https://gitdiagram.com/xmokecursed/xtify/diagram.png)](https://gitdiagram.com/xmokecursed/xtify?utm_source=readme&utm_medium=picture)
 
+![diagram](docs/xtify-diagram.png)
+
 ---
 
 ## Troubleshooting
