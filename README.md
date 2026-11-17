@@ -14,6 +14,7 @@
 
 ## Screenshots
 
+. Android
 | Home | Search | Player |
 | :---: | :---: | :---: |
 | ![Home](docs/Xtify-home.jpg) | ![Search](docs/Xtify-search.jpg) | ![Player](docs/Xtify-player.jpg) |
@@ -21,6 +22,15 @@
 | Library | Downloads | Playlist |
 | :---: | :---: | :---: |
 | ![Library](docs/Xtify-library.jpg) | ![Downloads](docs/Xtify-download.jpg) | ![Queue](docs/Xtify-autoplaylists.jpg) |
+
+. Windows
+| Home | Search | Player |
+| :---: | :---: | :---: |
+| ![Home](docs/Xtify-desktop-home.png) | ![Search](docs/Xtify-desktop-search.png) | ![Playlist](docs/Xtify-desktop-playlist.png) |
+
+| Library | Downloads | Playlist |
+| :---: | :---: | :---: |
+| ![Library](docs/Xtify-desktop-library.png) | ![Lyrics](docs/Xtify-desktop-lyrics.png) | ![Import](docs/Xtify-desktop-importing.png) |
 
 ---
 
