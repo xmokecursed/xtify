@@ -24,6 +24,10 @@ const double _collapsedFraction = 0.11;
 const double _expandedFraction = 0.70;
 const int _collapsedPercent = 11;
 const double kPlayerSettle = 0.005;
+const double _bottomFade = 56;
+
+double _reveal(double extent) =>
+    ((extent - _collapsedFraction) / 0.2).clamp(0.0, 1.0).toDouble();
 
 class PlayerSheet extends StatefulWidget {
   const PlayerSheet({super.key});
@@ -142,69 +146,66 @@ class _PlayerSheetState extends State<PlayerSheet> {
       snapSizes: const [_collapsedFraction, _expandedFraction],
       builder: (context, scrollController) {
         const radius = BorderRadius.vertical(top: Radius.circular(AppRadius.sheet));
-        return ValueListenableBuilder<double>(
-          valueListenable: _extent,
-          builder: (context, extent, child) {
-            final open = ((extent - _collapsedFraction) / (_expandedFraction - _collapsedFraction))
-                .clamp(0.0, 1.0)
-                .toDouble();
-            return DecoratedBox(
+        return ClipRRect(
+          borderRadius: radius,
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+            child: DecoratedBox(
               decoration: BoxDecoration(
+                color: const Color(0xFF0C0C0C).withValues(alpha: 0.66),
                 borderRadius: radius,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.6 * open),
-                    blurRadius: 24,
-                    offset: const Offset(0, -6),
-                  ),
-                ],
+                border: const Border(
+                  top: BorderSide(color: AppColors.hairline),
+                ),
               ),
-              child: ClipRRect(
-                borderRadius: radius,
-                child: BackdropFilter(
-                  enabled: open < 0.97,
-                  filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0C0C0C).withValues(alpha: 0.66 + 0.31 * open),
-                      borderRadius: radius,
-                      border: const Border(
-                        top: BorderSide(color: AppColors.hairline),
+              child: ValueListenableBuilder<double>(
+                valueListenable: _extent,
+                builder: (context, extent, child) {
+                  final feather = _bottomFade * _reveal(extent);
+                  return ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) {
+                      final start = rect.height <= 0
+                          ? 1.0
+                          : (1 - feather / rect.height).clamp(0.0, 1.0).toDouble();
+                      return LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: const [Colors.white, Colors.white, Colors.transparent],
+                        stops: [0.0, start, 1.0],
+                      ).createShader(rect);
+                    },
+                    child: child,
+                  );
+                },
+                child: ListView(
+                  controller: scrollController,
+                  padding: EdgeInsets.zero,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 6),
+                      child: Center(
+                        child: Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.22),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
                       ),
                     ),
-                    child: child,
-                  ),
-                ),
-              ),
-            );
-          },
-          child: ListView(
-            controller: scrollController,
-            padding: EdgeInsets.zero,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 6),
-                child: Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(2),
+                    _buildHeader(context),
+                    ValueListenableBuilder<double>(
+                      valueListenable: _extent,
+                      builder: (context, extent, child) =>
+                          Opacity(opacity: _reveal(extent), child: child),
+                      child: _buildExpandedContent(context),
                     ),
-                  ),
+                  ],
                 ),
               ),
-              _buildHeader(context),
-              ValueListenableBuilder<double>(
-                valueListenable: _extent,
-                builder: (context, extent, child) => Opacity(
-                  opacity: ((extent - _collapsedFraction) / 0.2).clamp(0.0, 1.0).toDouble(),
-                  child: child,
-                ),
-                child: _buildExpandedContent(context),
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -300,7 +301,7 @@ class _PlayerSheetState extends State<PlayerSheet> {
 
   Widget _buildExpandedContent(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.screen, 12, AppSpacing.screen, 24),
+      padding: const EdgeInsets.fromLTRB(AppSpacing.screen, 12, AppSpacing.screen, 24 + _bottomFade),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
