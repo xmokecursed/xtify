@@ -4,7 +4,7 @@
 
 # Xtify
 
-**A clean, ad-free music player for Android. Search any song, play it, keep your favourites offline.**
+**A clean, ad-free music player for Androids & Windows. Search any song, play it, keep your favourites offline.**
 
 [Download](../../releases/latest) · [Install](#install) · [How it works](#how-it-works)
 
@@ -128,3 +128,7 @@ Most songs play without it. YouTube sometimes refuses requests that don't look s
 ## Disclaimer
 
 Xtify is an independent personal project, not affiliated with YouTube, Google or Spotify. It hosts no music. You are responsible for how you use it. Please support the artists you love.
+
+## Creator
+
+[Xmoke](https://xmoke.is-a.dev)
