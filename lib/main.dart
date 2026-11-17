@@ -190,6 +190,7 @@ class _MobileHome extends StatefulWidget {
 class _MobileHomeState extends State<_MobileHome>
     with SingleTickerProviderStateMixin {
   int _selectedIndex = AppNav.instance.tab.value;
+  final ValueNotifier<bool> _playerOpen = ValueNotifier<bool>(false);
   late final AnimationController _fadeCtl = AnimationController(
     vsync: this,
     duration: AppMotion.medium,
@@ -207,6 +208,7 @@ class _MobileHomeState extends State<_MobileHome>
   @override
   void dispose() {
     AppNav.instance.tab.removeListener(_onTabChanged);
+    _playerOpen.dispose();
     _fadeCtl.dispose();
     super.dispose();
   }
@@ -230,56 +232,77 @@ class _MobileHomeState extends State<_MobileHome>
     AppNav.instance.tab.value = index;
   }
 
+  bool _trackPlayer(DraggableScrollableNotification n) {
+    _playerOpen.value = n.extent > n.minExtent + kPlayerSettle;
+    return false;
+  }
+
+  void _onBack(bool didPop, Object? result) {
+    if (didPop || _playerOpen.value) return;
+    AppNav.instance.tab.value = AppNav.homeTab;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                const SignInAgainBanner(),
-                Expanded(
-                  child: FadeTransition(
-                    opacity: _fade,
-                    child: IndexedStack(
-                      index: _selectedIndex,
-                      children: _widgetOptions,
+    return ValueListenableBuilder<bool>(
+      valueListenable: _playerOpen,
+      builder: (context, open, child) => PopScope(
+        canPop: !open && _selectedIndex == AppNav.homeTab,
+        onPopInvokedWithResult: _onBack,
+        child: child!,
+      ),
+      child: Scaffold(
+        body: Stack(
+          children: [
+            SafeArea(
+              bottom: false,
+              child: Column(
+                children: [
+                  const SignInAgainBanner(),
+                  Expanded(
+                    child: FadeTransition(
+                      opacity: _fade,
+                      child: IndexedStack(
+                        index: _selectedIndex,
+                        children: _widgetOptions,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          PlayerSheet(),
-        ],
-      ),
-      bottomNavigationBar: DecoratedBox(
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: AppColors.hairline)),
-        ),
-        child: NavigationBar(
-          selectedIndex: _selectedIndex,
-          onDestinationSelected: _onItemTapped,
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: 'Home',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.search_rounded),
-              selectedIcon: Icon(Icons.search_rounded, weight: 700),
-              label: 'Search',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.library_music_outlined),
-              selectedIcon: Icon(Icons.library_music_rounded),
-              label: 'Library',
+            NotificationListener<DraggableScrollableNotification>(
+              onNotification: _trackPlayer,
+              child: PlayerSheet(),
             ),
           ],
+        ),
+        bottomNavigationBar: DecoratedBox(
+          decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: AppColors.hairline)),
+          ),
+          child: NavigationBar(
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: _onItemTapped,
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home_rounded),
+                label: 'Home',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.search_rounded),
+                selectedIcon: Icon(Icons.search_rounded, weight: 700),
+                label: 'Search',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.library_music_outlined),
+                selectedIcon: Icon(Icons.library_music_rounded),
+                label: 'Library',
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -33,17 +33,21 @@ class _PlaylistImportSectionState extends State<PlaylistImportSection> {
     });
   }
 
-  void _start() {
-    final found = PlaylistLink.findAll(_links.text);
-    if (found.isEmpty) {
-      setState(() => _message =
-          'Paste a Spotify or YouTube playlist link. Mixes, Liked songs and Watch later cannot be imported.');
-      return;
-    }
+  void _clear() {
+    setState(() {
+      _links.clear();
+      _message = '';
+    });
+  }
+
+  void _start(List<PlaylistLink> found) {
+    FocusScope.of(context).unfocus();
     final added = PlaylistImportService.instance.add(found);
     setState(() {
       if (added == 0) {
-        _message = 'That playlist is already being imported.';
+        _message = found.length == 1
+            ? 'That playlist is already being imported.'
+            : 'Those playlists are already being imported.';
         return;
       }
       _links.clear();
@@ -51,54 +55,123 @@ class _PlaylistImportSectionState extends State<PlaylistImportSection> {
     });
   }
 
+  Widget _status(List<PlaylistLink> found) {
+    if (_message.isNotEmpty) {
+      return _Hint(icon: Icons.info_outline_rounded, text: _message);
+    }
+    if (found.isNotEmpty) {
+      final spotify = found.where((l) => l.source == PlaylistSource.spotify).length;
+      final youtube = found.length - spotify;
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          if (spotify > 0) _SourceChip(name: 'Spotify', count: spotify),
+          if (youtube > 0) _SourceChip(name: 'YouTube', count: youtube),
+        ],
+      );
+    }
+    if (_links.text.trim().isNotEmpty) {
+      return const _Hint(
+        icon: Icons.info_outline_rounded,
+        text: 'No Spotify or YouTube playlist link found.',
+      );
+    }
+    return const _Hint(
+      icon: Icons.info_outline_rounded,
+      text: 'Add as many links as you like, one per line.',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final text = _links.text;
+    final found = PlaylistLink.findAll(text);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.screen),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextField(
-            controller: _links,
-            minLines: 1,
-            maxLines: 3,
-            keyboardType: TextInputType.multiline,
-            style: const TextStyle(fontSize: 15),
-            decoration: InputDecoration(
-              isDense: true,
-              filled: true,
-              fillColor: AppColors.card,
-              hintText: 'Paste playlist links, one per line',
-              hintStyle: const TextStyle(color: AppColors.textSecondary),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              suffixIcon: IconButton(
-                tooltip: 'Paste',
-                icon: const Icon(Icons.content_paste_rounded,
-                    size: 20, color: AppColors.textSecondary),
-                onPressed: _paste,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide.none,
-              ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              border: Border.all(color: AppColors.hairline),
             ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _message,
-                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _links,
+                  onChanged: (_) => setState(() => _message = ''),
+                  minLines: 1,
+                  maxLines: 4,
+                  keyboardType: TextInputType.multiline,
+                  style: const TextStyle(fontSize: 15),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    filled: true,
+                    fillColor: AppColors.surface,
+                    hintText: 'Paste playlist links here',
+                    hintStyle: const TextStyle(color: AppColors.textSecondary),
+                    prefixIcon: const Icon(Icons.link_rounded,
+                        size: 20, color: AppColors.textSecondary),
+                    suffixIcon: text.isEmpty
+                        ? IconButton(
+                            tooltip: 'Paste',
+                            icon: const Icon(Icons.content_paste_rounded,
+                                size: 20, color: AppColors.textSecondary),
+                            onPressed: _paste,
+                          )
+                        : IconButton(
+                            tooltip: 'Clear',
+                            icon: const Icon(Icons.close_rounded,
+                                size: 20, color: AppColors.textSecondary),
+                            onPressed: _clear,
+                          ),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton.icon(
-                onPressed: _start,
-                icon: const Icon(Icons.playlist_add_rounded, size: 20),
-                label: const Text('Import'),
-              ),
-            ],
+                const SizedBox(height: 12),
+                AnimatedSize(
+                  duration: AppMotion.fast,
+                  curve: AppMotion.curve,
+                  alignment: Alignment.topLeft,
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: _status(found),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: found.isEmpty ? null : () => _start(found),
+                    style: FilledButton.styleFrom(
+                      disabledBackgroundColor: AppColors.highlight,
+                      disabledForegroundColor: AppColors.textTertiary,
+                    ),
+                    icon: const Icon(Icons.playlist_add_rounded, size: 20),
+                    label: Text(
+                      found.length > 1 ? 'Import ${found.length} playlists' : 'Import playlist',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Spotify shares about the first 100 songs of a playlist. '
+                  'Mixes and Liked songs cannot be imported.',
+                  style: TextStyle(fontSize: 12, height: 1.35, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
           ),
           ValueListenableBuilder<List<ImportJob>>(
             valueListenable: PlaylistImportService.instance.jobs,
@@ -126,6 +199,62 @@ class _PlaylistImportSectionState extends State<PlaylistImportSection> {
                 ),
               );
             },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Hint extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _Hint({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Icon(icon, size: 16, color: AppColors.textSecondary),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 13, height: 1.3, color: AppColors.textSecondary),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SourceChip extends StatelessWidget {
+  final String name;
+  final int count;
+
+  const _SourceChip({required this.name, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.highlight,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_rounded, size: 16),
+          const SizedBox(width: 6),
+          Text(
+            count == 1 ? '$name playlist' : '$count $name playlists',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -183,19 +312,45 @@ class _Running extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final progress = job.progress;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.highlight,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.queue_music_rounded, size: 22),
+            ),
+            const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                _titleOf(job),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _titleOf(job),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${job.link.sourceName} playlist',
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ],
               ),
             ),
+            if (progress != null)
+              Text(
+                '${(progress * 100).round()}%',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
             IconButton(
               tooltip: job.stopRequested ? 'Stopping' : 'Stop',
               visualDensity: VisualDensity.compact,
@@ -205,9 +360,9 @@ class _Running extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         LinearProgressIndicator(
-          value: job.progress,
+          value: progress,
           minHeight: 6,
           borderRadius: BorderRadius.circular(3),
           backgroundColor: AppColors.border,

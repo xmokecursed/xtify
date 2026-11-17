@@ -49,10 +49,11 @@ class ArtistMixService {
   ArtistMixService._();
   static final ArtistMixService instance = ArtistMixService._();
 
-  static const String _key = 'artist_mixes_v1';
-  static const int _maxMixes = 6;
+  static const String _key = 'artist_mixes_v2';
+  static const String _oldKey = 'artist_mixes_v1';
+  static const int _maxMixes = 15;
   static const int _minPlays = 2;
-  static const int _target = 20;
+  static const int _target = 50;
   static const Duration _ttl = Duration(hours: 12);
   static const Duration _retryAfter = Duration(minutes: 30);
 
@@ -70,11 +71,20 @@ class ArtistMixService {
   Future<void> init() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_key);
+      final current = prefs.getString(_key);
+      final raw = current ?? prefs.getString(_oldKey);
       if (raw != null) {
         for (final e in json.decode(raw) as List<dynamic>) {
           final m = ArtistMix.fromJson(e as Map<String, dynamic>);
-          if (m != null) _cache[_k(m.artist)] = m;
+          if (m == null) continue;
+          _cache[_k(m.artist)] = current != null
+              ? m
+              : ArtistMix(
+                  artist: m.artist,
+                  imageUrl: m.imageUrl,
+                  tracks: m.tracks,
+                  updatedAtMs: 0,
+                );
         }
       }
     } catch (_) {}
@@ -169,7 +179,7 @@ class ArtistMixService {
   Future<ArtistMix?> _build(ArtistEntry a) async {
     List<Track> fetched = const [];
     try {
-      fetched = await YouTubeCatalog.artistSongs(a.name);
+      fetched = await YouTubeCatalog.artistSongs(a.name, limit: _target * 2);
     } catch (e) {
       debugPrint('artist mix ${a.name}: songs failed: $e');
     }
@@ -199,6 +209,7 @@ class ArtistMixService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
           _key, json.encode(_cache.values.map((m) => m.toJson()).toList()));
+      await prefs.remove(_oldKey);
     } catch (_) {}
   }
 }

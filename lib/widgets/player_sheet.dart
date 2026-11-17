@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 import '../desktop/desktop_scope.dart';
 import 'download_widgets.dart';
 import 'media_tile.dart';
@@ -22,6 +23,7 @@ import 'package:rxdart/rxdart.dart';
 const double _collapsedFraction = 0.11;
 const double _expandedFraction = 0.70;
 const int _collapsedPercent = 11;
+const double kPlayerSettle = 0.005;
 
 class PlayerSheet extends StatefulWidget {
   const PlayerSheet({super.key});
@@ -52,9 +54,32 @@ class _PlayerSheetState extends State<PlayerSheet> {
     );
   }
 
+  void _collapse() {
+    if (!_ctl.isAttached || _extent.value <= _collapsedFraction + kPlayerSettle) return;
+    _ctl.animateTo(
+      _collapsedFraction,
+      duration: AppMotion.medium,
+      curve: AppMotion.curve,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (DesktopScope.isWide(context)) return const SizedBox.shrink();
+    return ValueListenableBuilder<double>(
+      valueListenable: _extent,
+      builder: (context, extent, child) => PopScope(
+        canPop: extent <= _collapsedFraction + kPlayerSettle,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _collapse();
+        },
+        child: child!,
+      ),
+      child: _stack(context),
+    );
+  }
+
+  Widget _stack(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -116,43 +141,60 @@ class _PlayerSheetState extends State<PlayerSheet> {
       snap: true,
       snapSizes: const [_collapsedFraction, _expandedFraction],
       builder: (context, scrollController) {
-        return Container(
+        final extent = _extent.value;
+        final open = ((extent - _collapsedFraction) / (_expandedFraction - _collapsedFraction))
+            .clamp(0.0, 1.0)
+            .toDouble();
+        final reveal =
+            ((extent - _collapsedFraction) / 0.2).clamp(0.0, 1.0).toDouble();
+        const radius = BorderRadius.vertical(top: Radius.circular(AppRadius.sheet));
+        return DecoratedBox(
           decoration: BoxDecoration(
-            color: const Color(0xFF0C0C0C),
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(AppRadius.sheet),
-            ),
-            border: const Border(
-              top: BorderSide(color: AppColors.hairline),
-            ),
+            borderRadius: radius,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.6),
+                color: Colors.black.withValues(alpha: 0.6 * open),
                 blurRadius: 24,
                 offset: const Offset(0, -6),
               ),
             ],
           ),
-          child: ListView(
-            controller: scrollController,
-            padding: EdgeInsets.zero,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 6),
-                child: Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+          child: ClipRRect(
+            borderRadius: radius,
+            child: BackdropFilter(
+              enabled: open < 0.97,
+              filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0C0C0C).withValues(alpha: 0.66 + 0.31 * open),
+                  borderRadius: radius,
+                  border: const Border(
+                    top: BorderSide(color: AppColors.hairline),
                   ),
                 ),
+                child: ListView(
+                  controller: scrollController,
+                  padding: EdgeInsets.zero,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 6),
+                      child: Center(
+                        child: Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.22),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                    ),
+                    _buildHeader(context),
+                    Opacity(opacity: reveal, child: _buildExpandedContent(context)),
+                  ],
+                ),
               ),
-              _buildHeader(context),
-              _buildExpandedContent(context),
-            ],
+            ),
           ),
         );
       },

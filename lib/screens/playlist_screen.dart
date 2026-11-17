@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../desktop/desktop_scope.dart';
 import '../models/playlist_model.dart';
 import '../models/track_model.dart';
 import '../services/audio_service.dart';
@@ -117,7 +118,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         final shown = _shown(p.tracks);
         final filtering = _query.trim().isNotEmpty || _sort != _Sort.custom;
 
-        Widget row(BuildContext context, Track t, int i) {
+        Widget row(BuildContext context, Track t, int i, {bool reorder = false}) {
           return Dismissible(
             key: ValueKey('${p.id}-${t.id}'),
             direction: DismissDirection.endToStart,
@@ -151,6 +152,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               onTap: () => _play(context, shown, start: i),
               showDownload: !isDownloads,
               showMore: false,
+              trailing: reorder && isDesktopPlatform ? ReorderHandle(index: i) : null,
             ),
           );
         }
@@ -330,11 +332,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                     )
                                   : ReorderableListView.builder(
                                       padding: const EdgeInsets.only(bottom: 140),
+                                      buildDefaultDragHandles: !isDesktopPlatform,
                                       itemCount: p.tracks.length,
                                       onReorderItem: (a, b) =>
                                           PlaylistService.instance.reorder(p.id, a, b),
                                       itemBuilder: (context, i) =>
-                                          row(context, p.tracks[i], i),
+                                          row(context, p.tracks[i], i, reorder: true),
                                     ),
                         ),
                       ],

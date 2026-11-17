@@ -17,6 +17,7 @@ class TrackRow extends StatelessWidget {
   final bool showFavourite;
   final bool showDownload;
   final bool showMore;
+  final Widget? trailing;
 
   final String? searchedFor;
 
@@ -27,6 +28,7 @@ class TrackRow extends StatelessWidget {
     this.showFavourite = true,
     this.showDownload = true,
     this.showMore = true,
+    this.trailing,
     this.searchedFor,
   });
 
@@ -93,6 +95,7 @@ class TrackRow extends StatelessWidget {
                 icon: const Icon(Icons.more_horiz, size: 22),
                 onPressed: () => showTrackOptions(context, track),
               ),
+            ?trailing,
           ],
         ),
       ),
@@ -115,6 +118,30 @@ class TrackRow extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             clipBehavior: Clip.antiAlias,
             child: row,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ReorderHandle extends StatelessWidget {
+  final int index;
+
+  const ReorderHandle({super.key, required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    return ReorderableDragStartListener(
+      index: index,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.grab,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {},
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+            child: Icon(Icons.drag_handle, size: 22, color: AppColors.textSecondary),
           ),
         ),
       ),
