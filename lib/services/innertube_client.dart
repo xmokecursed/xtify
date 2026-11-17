@@ -20,6 +20,12 @@ class InnertubeException implements Exception {
   String toString() => message;
 }
 
+class InnertubeIdentity {
+  final String visitor;
+  final String cookies;
+  const InnertubeIdentity(this.visitor, this.cookies);
+}
+
 class _Session {
   final String visitorData;
   final Map<String, String> cookies;
@@ -69,6 +75,11 @@ class InnertubeClient {
     } catch (e) {
       debugPrint('direct lookup: could not start a session ahead of time: $e');
     }
+  }
+
+  static Future<InnertubeIdentity> identity() async {
+    final s = await _sessionFor();
+    return InnertubeIdentity(s.visitorData, s.cookieHeader);
   }
 
   static Future<_Session> _sessionFor({String? videoId}) async {

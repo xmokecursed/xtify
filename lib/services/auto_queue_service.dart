@@ -1,10 +1,10 @@
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../models/track_model.dart';
-import 'api_service.dart';
 import 'artist_credit.dart';
 import 'auto_queue_settings.dart';
 import 'history_service.dart';
+import 'youtube_catalog.dart';
 
 class _Candidate {
   final String artist;
@@ -34,7 +34,6 @@ class AutoQueueService {
   Future<Track?>? _nextFuture;
   int _epoch = 0;
   final Set<String> _ytmTried = {};
-  final Map<String, int> _retries = {};
 
   String? _wanted;
   bool _artistOk = true;
@@ -177,21 +176,9 @@ class AutoQueueService {
     return f;
   }
 
-  Future<List<_Candidate>> _similarFor(String artist, String title) async {
-    if (artist.trim().isEmpty || title.trim().isEmpty) return const [];
-    try {
-      final sims = await ApiService.getSimilarTracks(artist, title);
-      return sims.map((s) => _Candidate(s.artist, s.name)).toList();
-    } catch (e) {
-      debugPrint('auto-queue: similar tracks failed for "$artist - $title": $e');
-      return const [];
-    }
-  }
-
   Future<void> _loadPool(Track seed, int epoch) async {
     final artist = seed.artist.trim();
     final title = cleanTitle(seed.title);
-    final seedKey = _Candidate(artist, title).key;
     const enough = 5;
 
     if (_wanted != null && _artistOk) {
@@ -212,7 +199,7 @@ class AutoQueueService {
     final found = <_Candidate>[];
     if (seed.isPlayable && _ytmTried.add(seed.id)) {
       try {
-        final similar = await ApiService.getSimilarYtm(
+        final similar = await YouTubeCatalog.similar(
           seed.id,
           query: '$artist $title'.trim(),
           artist: artist,
@@ -226,14 +213,14 @@ class AutoQueueService {
         }
         debugPrint('auto-queue: YouTube Music gave ${found.length} songs');
       } catch (e) {
-        debugPrint('auto-queue: YouTube Music failed, using Last.fm: $e');
+        debugPrint('auto-queue: YouTube Music failed: $e');
       }
     }
 
     if (found.length < enough && seed.isPlayable) {
       try {
         var n = 0;
-        for (final t in await ApiService.getRelated(seed.id)) {
+        for (final t in await YouTubeCatalog.related(seed.id)) {
           final secs = _seconds(t.duration);
           if (secs < 60 || secs > 900 || _junk.hasMatch(t.title)) continue;
           if (t.artist.trim().isEmpty) continue;
@@ -247,45 +234,18 @@ class AutoQueueService {
       }
     }
 
-    if (found.length < enough) found.addAll(await _similarFor(artist, title));
-
-    if (found.length < enough && title.isNotEmpty) {
-      try {
-        final matches = await ApiService.searchLastFmTracks(title, limit: 3);
-        for (final m in matches) {
-          if (m.artist.toLowerCase() != artist.toLowerCase()) continue;
-          if (_Candidate(m.artist, m.name).key == seedKey) continue;
-          final sims = await _similarFor(m.artist, m.name);
-          if (sims.isNotEmpty) {
-            debugPrint('auto-queue: using Last.fm match "${m.artist} - ${m.name}"');
-            found.addAll(sims);
-            break;
-          }
-        }
-      } catch (e) {
-        debugPrint('auto-queue: title lookup failed: $e');
-      }
-    }
-
     if (found.length < enough && artist.isNotEmpty) {
       try {
-        final top = await ApiService.getArtistTopTracks(artist);
-        found.addAll(top.map(
-            (t) => _Candidate(t.artist.isEmpty ? artist : t.artist, t.title)));
-      } catch (e) {
-        debugPrint('auto-queue: artist top tracks failed: $e');
-      }
-    }
-    if (found.length < enough && artist.isNotEmpty) {
-      try {
-        final names = await ApiService.getSimilarArtistNames(artist);
-        for (final name in names.take(3)) {
-          final top = await ApiService.getArtistTopTracks(name);
-          found.addAll(top.take(5).map(
-              (t) => _Candidate(t.artist.isEmpty ? name : t.artist, t.title)));
+        var n = 0;
+        for (final t in await YouTubeCatalog.artistSongs(artist)) {
+          if (!_fits(t) || t.artist.trim().isEmpty) continue;
+          if (_norm(cleanTitle(t.title)) == _norm(title)) continue;
+          found.add(_Candidate(t.artist, t.title, t));
+          n++;
         }
+        debugPrint('auto-queue: $n songs by "$artist" added');
       } catch (e) {
-        debugPrint('auto-queue: similar artists failed: $e');
+        debugPrint('auto-queue: songs by "$artist" failed: $e');
       }
     }
 
@@ -388,19 +348,9 @@ class AutoQueueService {
       debugPrint('auto-queue: YouTube Music songs by "$name" failed: $e');
     }
     if (epoch != _epoch) return null;
-    if (songs.length < 10) {
-      try {
-        for (final t in await ApiService.getArtistTopTracks(name)) {
-          if (t.title.trim().isNotEmpty) songs.add(_Candidate(name, t.title));
-        }
-      } catch (e) {
-        debugPrint('auto-queue: top songs by "$name" failed: $e');
-      }
-      if (epoch != _epoch) return null;
-    }
     if (songs.length < 5) {
       try {
-        for (final t in await ApiService.searchTracks(name, limit: 25)) {
+        for (final t in await YouTubeCatalog.search(name, limit: 25)) {
           if (_fits(t) && ArtistCredit.of(t).has(name)) {
             songs.add(_Candidate(name, t.title, _named(t, name)));
           }
@@ -417,7 +367,7 @@ class AutoQueueService {
 
   Future<List<_Candidate>> _fetchArtist(String name) async {
     final out = <_Candidate>[];
-    for (final t in await ApiService.getArtistSongsYtm(name)) {
+    for (final t in await YouTubeCatalog.artistSongs(name)) {
       if (!_fits(t)) continue;
       out.add(_Candidate(t.artist.trim().isEmpty ? name : t.artist, t.title, _named(t, name)));
     }
@@ -483,29 +433,13 @@ class AutoQueueService {
       ..addAll(kept.map((t) => _titleKey(t.title)));
   }
 
-  bool _byFocus(Track t) {
-    final want = _wanted;
-    if (want == null || !_artistOk) return true;
-    final credit = ArtistCredit.of(t);
-    return credit.isEmpty || credit.has(want);
-  }
-
   Future<Track?> _choose() async {
-    final epoch = _epoch;
     var tries = 0;
     while (_pool.isNotEmpty && tries < 5) {
       final c = _pool.removeAt(_rng.nextInt(min(_pool.length, 5)));
       if (_usedKeys.contains(c.key) || _playedTitles.contains(_titleKey(c.name))) continue;
       tries++;
-      Track? t;
-      try {
-        t = c.ready ?? await _toPlayable(c);
-      } catch (e) {
-        if ((_retries[c.key] = (_retries[c.key] ?? 0) + 1) <= 1) _pool.add(c);
-        await Future.delayed(const Duration(seconds: 2));
-        continue;
-      }
-      if (epoch != _epoch) return null;
+      final t = c.ready;
       if (t == null || _usedIds.contains(t.id)) continue;
       if (t.artist.trim().isEmpty) {
         debugPrint('auto-queue: skipped "${c.name}" (${t.id}): no artist');
@@ -518,27 +452,6 @@ class AutoQueueService {
       return t;
     }
     return null;
-  }
-
-  Future<Track?> _toPlayable(_Candidate c) async {
-      final results = await ApiService.searchTracks('${c.artist} ${c.name}', limit: 6);
-      final want = _norm(cleanTitle(c.name));
-      final hit = results.where((t) =>
-          _seconds(t.duration) >= 60 &&
-          !_junk.hasMatch(t.title) &&
-          _byFocus(t) &&
-          _norm(t.title).contains(want));
-      if (hit.isEmpty) return null;
-      final t = hit.first;
-      return Track(
-        id: t.id,
-        title: c.name,
-        artist: c.artist,
-        album: t.album,
-        duration: t.duration,
-        imageUrl: t.imageUrl,
-        previewUrl: t.previewUrl,
-      );
   }
 
   static String _norm(String s) =>

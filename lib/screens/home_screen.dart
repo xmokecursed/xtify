@@ -166,7 +166,7 @@ class HomeScreen extends StatelessWidget {
           if (online)
           SectionSliver(
             title: 'Explore more',
-            subtitle: 'Trending on Last.fm',
+            subtitle: 'Trending on YouTube Music',
             trailing: _BusyDot(listenable: feed.loadingTrending),
             child: ValueListenableBuilder<bool>(
               valueListenable: feed.loadingTrending,

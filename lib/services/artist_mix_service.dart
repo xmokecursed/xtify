@@ -4,8 +4,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track_model.dart';
-import 'api_service.dart';
 import 'history_service.dart';
+import 'youtube_catalog.dart';
 
 class ArtistMix {
   final String artist;
@@ -169,16 +169,9 @@ class ArtistMixService {
   Future<ArtistMix?> _build(ArtistEntry a) async {
     List<Track> fetched = const [];
     try {
-      fetched = await ApiService.getArtistSongsYtm(a.name);
+      fetched = await YouTubeCatalog.artistSongs(a.name);
     } catch (e) {
-      debugPrint('artist mix ${a.name}: ytm failed: $e');
-    }
-    if (fetched.isEmpty) {
-      try {
-        fetched = await ApiService.getArtistTopTracks(a.name);
-      } catch (e) {
-        debugPrint('artist mix ${a.name}: fallback failed: $e');
-      }
+      debugPrint('artist mix ${a.name}: songs failed: $e');
     }
     final played = _played(a.name);
     final seen = <String>{for (final t in played) t.id};

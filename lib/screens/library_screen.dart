@@ -6,6 +6,7 @@ import '../widgets/debug_button.dart';
 import '../widgets/layout.dart';
 import '../widgets/media_tile.dart';
 import '../widgets/offline_banner.dart';
+import '../widgets/playlist_import_section.dart';
 import '../widgets/playlist_sheets.dart';
 import 'artist_screen.dart';
 import 'playlist_screen.dart';
@@ -101,6 +102,11 @@ class LibraryScreen extends StatelessWidget {
               );
             },
           ),
+        ),
+        const SectionSliver(
+          title: 'Import a playlist',
+          subtitle: 'From Spotify or YouTube',
+          child: PlaylistImportSection(),
         ),
         const SliverToBoxAdapter(child: SizedBox(height: 120)),
       ],

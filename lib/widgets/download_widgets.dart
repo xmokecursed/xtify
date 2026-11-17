@@ -180,6 +180,151 @@ class _SmoothBar extends StatelessWidget {
   }
 }
 
+class PlaylistDownloadBar extends StatelessWidget {
+  final List<Track> tracks;
+
+  const PlaylistDownloadBar({super.key, required this.tracks});
+
+  static const int _confirmAbove = 20;
+
+  Future<void> _download(BuildContext context, List<Track> wanted) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (wanted.length > _confirmAbove) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          surfaceTintColor: Colors.transparent,
+          title: Text('Download ${wanted.length} songs?'),
+          content: const Text('They are saved on this device and use storage space and data.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Download'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    DownloadService.instance.enqueueAll(wanted);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      content: Text(wanted.length == 1 ? 'Downloading 1 song' : 'Downloading ${wanted.length} songs'),
+    ));
+  }
+
+  void _cancelAll(List<Track> busy) {
+    for (final t in busy) {
+      DownloadService.instance.cancel(t.id);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final svc = DownloadService.instance;
+    return ListenableBuilder(
+      listenable: Listenable.merge([svc.items, svc.tasks]),
+      builder: (context, _) {
+        final seen = <String>{};
+        final playable = <Track>[
+          for (final t in tracks)
+            if (t.isPlayable && seen.add(t.id)) t,
+        ];
+        if (playable.isEmpty) return const SizedBox.shrink();
+        final missing = <Track>[];
+        final busy = <Track>[];
+        var failed = 0;
+        for (final t in playable) {
+          if (svc.isDownloaded(t.id)) continue;
+          final task = svc.tasks.value[t.id];
+          if (task == null) {
+            missing.add(t);
+          } else if (task.status == DownloadStatus.failed) {
+            missing.add(t);
+            failed++;
+          } else {
+            busy.add(t);
+          }
+        }
+        final saved = playable.length - missing.length - busy.length;
+
+        if (busy.isNotEmpty) {
+          return Container(
+            padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Downloading · $saved of ${playable.length} saved',
+                        style: const TextStyle(fontSize: 13, color: Colors.white),
+                      ),
+                      const SizedBox(height: 8),
+                      _SmoothBar(progress: saved / playable.length),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _cancelAll(busy),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (missing.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                const Icon(Icons.download_done, size: 18, color: AppColors.textSecondary),
+                const SizedBox(width: 8),
+                Text(
+                  playable.length == 1
+                      ? 'The song is downloaded'
+                      : 'All ${playable.length} songs are downloaded',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final String label;
+        if (failed > 0 && failed == missing.length) {
+          label = failed == 1 ? 'Retry 1 failed song' : 'Retry $failed failed songs';
+        } else if (saved > 0) {
+          label = 'Download ${missing.length} more';
+        } else if (missing.length == 1) {
+          label = 'Download 1 song';
+        } else {
+          label = 'Download all ${missing.length} songs';
+        }
+        return SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => _download(context, missing),
+            icon: const Icon(Icons.download_rounded, size: 20),
+            label: Text(label),
+          ),
+        );
+      },
+    );
+  }
+}
+
 void _openDownloads(BuildContext context) {
   Navigator.of(context).push(MaterialPageRoute<void>(
     builder: (_) => const PlaylistScreen(playlistId: PlaylistService.downloadsId),

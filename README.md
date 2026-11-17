@@ -37,6 +37,8 @@
 
 **Keep**
 - **Playlists and Favourites**, with modern sorting and a filtering options.
+- **Import playlists** from Spotify and YouTube links into playlists of their own. Import as many as you like: a progress bar shows how far each one is, and a report afterwards says how many songs were imported and which ones failed and why. It lives in the Library, under Artists.
+- **Download a whole playlist** with one button.
 - **Downloads** with title, artist and cover art written into the file.
 - **Offline mode:** with no internet, only your downloads show and play.
 - History upto last 30 songs.
@@ -66,7 +68,7 @@ flutter pub get
 flutter run
 ```
 
-Search and recommendations go through [xtify-backend](https://github.com/xmokecursed/xtify-backend). The app uses a shared server by default; to use your own, change `_baseUrl` in `lib/services/api_service.dart`.
+There is no server to set up. Search, recommendations and playlist import all run inside the app.
 
 ---
 
@@ -75,7 +77,7 @@ Search and recommendations go through [xtify-backend](https://github.com/xmokecu
 Most songs play without it. YouTube sometimes refuses requests that don't look signed in (*"Sign in to confirm you're not a bot"*), and signing in fixes that.
 
 - You log in on a normal Google page inside the app. Xtify NEVER sees your password.
-- Only the session cookies are kept, in the app's private storage on your phone. They are NOT sent to Xtify's server.
+- Only the session cookies are kept, in the app's private storage on your phone. They are only ever sent to YouTube.
 - If the login expires, a *Sign in again* notice will appear again.
 - Tip: use a secondary Google account. Automated-looking use can, *rarely, get an account flagged.
 
@@ -97,8 +99,6 @@ Most songs play without it. YouTube sometimes refuses requests that don't look s
 
 [![Architecture diagram of xmokecursed/xtify](https://gitdiagram.com/xmokecursed/xtify/diagram.png)](https://gitdiagram.com/xmokecursed/xtify?utm_source=readme&utm_medium=picture)
 
-![diagram](docs/xtify-diagram.jpg)
-
 ---
 
 ## Troubleshooting
@@ -106,7 +106,8 @@ Most songs play without it. YouTube sometimes refuses requests that don't look s
 | Problem | Try |
 | --- | --- |
 | Songs not playing, or "not a bot" error | Sign in (or sign in again) from the strip above the player. |
-| First search is very slow | The server was asleep. Wait a minute. |
+| Some songs failed to import | The report under *Library → Import a playlist* lists every failed song and why. Songs with no match on YouTube Music, and private or deleted videos, cannot be imported. |
+| A Spotify playlist stopped after about 100 songs | Spotify only shares about the first 100 songs of a playlist link. The report says how many were left out. |
 | Download fails | Check you're online and the download folder still exists. Downloading many songs quickly can get your IP temporarily flagged by YouTube. |
 | Something else is broken | Library → bug icon → *Copy debug info*, and send it with your report. |
 
@@ -114,4 +115,4 @@ Most songs play without it. YouTube sometimes refuses requests that don't look s
 
 ## Disclaimer
 
-Xtify is an independent personal project, not affiliated with YouTube, Google, Spotify or Last.fm. It hosts no music. You are responsible for how you use it. Please support the artists you love.
+Xtify is an independent personal project, not affiliated with YouTube, Google or Spotify. It hosts no music. You are responsible for how you use it. Please support the artists you love.

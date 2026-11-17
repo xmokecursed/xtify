@@ -240,6 +240,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                 ],
                               ),
                               const SizedBox(height: 12),
+                              if (!isDownloads) ...[
+                                PlaylistDownloadBar(tracks: p.tracks),
+                                const SizedBox(height: 12),
+                              ],
                               Row(
                                 children: [
                                   Expanded(

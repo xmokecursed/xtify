@@ -100,6 +100,31 @@ class PlaylistService {
     return p;
   }
 
+  Future<Playlist> createFrom(
+    String title,
+    List<Track> tracks, {
+    String description = '',
+  }) async {
+    final base = Playlist(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      title: title.trim().isEmpty ? 'Imported playlist' : title.trim(),
+      description: description,
+      imageUrl: '',
+      ownerId: 'local',
+      createdAt: DateTime.now(),
+      tracks: const [],
+    );
+    final made = _copy(base, tracks: tracks);
+    playlists.value = [...playlists.value, made];
+    await _save();
+    return made;
+  }
+
+  Future<void> setTracks(String id, List<Track> tracks) async {
+    if (byId(id) == null) return;
+    await _update(id, (p) => _copy(p, tracks: tracks));
+  }
+
   Future<void> rename(String id, String title) async {
     final t = title.trim();
     if (t.isEmpty || id == favouritesId || id == downloadsId) return;

@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../models/track_model.dart';
-import 'api_service.dart';
+import 'youtube_catalog.dart';
 
 class TrackQuery {
   final String artist;
@@ -26,18 +26,25 @@ class TrackLookup {
     return 0;
   }
 
+  static Track? _pick(List<Track> results, String name) {
+    final want = _norm(name);
+    final ok = results
+        .where((t) => _seconds(t.duration) >= 60 && !_junk.hasMatch(t.title))
+        .toList();
+    if (ok.isEmpty) return null;
+    final exact = ok.where((t) => _norm(t.title).contains(want)).toList();
+    return (exact.isNotEmpty ? exact : ok).first;
+  }
+
   static Future<Track?> find(String artist, String name) async {
+    final query = '$artist $name'.trim();
+    if (query.isEmpty) return null;
     try {
-      final results = await ApiService.searchTracks('$artist $name', limit: 6);
-      final want = _norm(name);
-      final ok = results
-          .where((t) => _seconds(t.duration) >= 60 && !_junk.hasMatch(t.title))
-          .toList();
-      if (ok.isEmpty) return null;
-      final exact = ok.where((t) => _norm(t.title).contains(want)).toList();
-      return (exact.isNotEmpty ? exact : ok).first;
+      final picked = _pick(await YouTubeCatalog.songs(query, limit: 8), name);
+      if (picked != null) return picked;
+      return _pick(await YouTubeCatalog.search(query, limit: 8), name);
     } catch (e) {
-      debugPrint('lookup failed for "$artist $name": $e');
+      debugPrint('lookup failed for "$query": $e');
       return null;
     }
   }
@@ -47,7 +54,7 @@ class TrackLookup {
     int max = 10,
     Set<String> excludeIds = const {},
     void Function(List<Track>)? onProgress,
-    int concurrency = 2,
+    int concurrency = 3,
   }) async {
     final results = List<Track?>.filled(queries.length, null);
     var next = 0;

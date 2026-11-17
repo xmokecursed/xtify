@@ -4,14 +4,14 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:rxdart/rxdart.dart';
 import '../../models/track_model.dart';
-import '../../services/api_service.dart';
 import '../../services/audio_url_resolver.dart';
+import '../../services/youtube_catalog.dart';
 
 part 'search_event.dart';
 part 'search_state.dart';
 
 class SearchBloc extends Bloc<SearchEvent, SearchState> {
-  static const int _firstLimit = 25;
+  static const int _firstLimit = 20;
   static const int _step = 20;
   static const int _maxLimit = 50;
 
@@ -34,7 +34,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
 
     emit(SearchLoading());
     try {
-      final tracks = await ApiService.searchTracks(query, limit: _firstLimit);
+      final tracks = await YouTubeCatalog.search(query, limit: _firstLimit);
       emit(SearchSuccess(
         tracks: tracks,
         query: query,
@@ -61,7 +61,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
 
     final newLimit = min(current.limit + _step, _maxLimit);
     try {
-      final tracks = await ApiService.searchTracks(current.query, limit: newLimit);
+      final tracks = await YouTubeCatalog.search(current.query, limit: newLimit);
       final latest = state;
       if (latest is! SearchSuccess || latest.query != current.query) return;
 
