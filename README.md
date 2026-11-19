@@ -6,7 +6,7 @@
 
 **A clean, ad-free music player for Androids & Windows. Search any song, play it, keep your favourites offline.**
 
-[Download](../../releases/latest) · [Install](#install) · [How it works](#how-it-works)
+[Download](../../releases/) · [Install](#install) · [How it works](#how-it-works)
 
 </div>
 
@@ -62,7 +62,7 @@
 
 ## Install
 
-1. Download `xtify.apk` from the [Releases page](../../releases/latest).
+1. Download `xtify-*.apk` or `XtifySetup.*` from the [Releases page](../../releases/).
 2. Open it on your phone and allow installs from your browser or file manager if asked.
 
 Signing in to YouTube is optional (see below).
@@ -101,7 +101,8 @@ Most songs play without it. YouTube sometimes refuses requests that don't look s
 - Not an official app. It relies on YouTube, so songs can stop playing until the app is updated after a YouTube change. It goes against YouTube's Terms of Service; use it at your own risk.
 - Sound quality is whatever YouTube provides.
 - No lyrics, podcasts, sharing or Chromecast. The catalogue is YouTube's, so a song may come as a different version (live, remix) than you expected.
-- Android only (the release APK targets 64-bit ARM). No cloud sync.
+- Android Version 12+ only (the release APK targets 64-bit ARM). No cloud sync.
+- Might add support for older versions of Android if i figure out how to.
 
 ---
 
