@@ -2,6 +2,15 @@
 All notable changes to **Xtify** are recorded here, newest first.
 ---
 
+## 3.1.0 - 2026-11-19
+
+**Feature** - Update notice
+
+- The app checks whether a newer version is out and shows a "New version available" bar at the top with a link to the download page.
+- Android and desktop are checked separately, so each one only hears about its own releases.
+- The check runs in the background at launch and again every few hours while the app stays open. It stays silent when there is no connection or the check fails.
+- The app version is now 3.1.0, matching this changelog (it still said 1.0.0 before).
+
 ## 3.0.3 - 2026-11-17
 
 **UX fix** - Frosted player bar at every size

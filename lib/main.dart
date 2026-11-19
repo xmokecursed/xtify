@@ -30,9 +30,11 @@ import 'package:xtify_app/services/debug_log.dart';
 import 'package:xtify_app/services/download_service.dart';
 import 'package:xtify_app/services/feed_service.dart';
 import 'package:xtify_app/services/search_history_service.dart';
+import 'package:xtify_app/services/update_service.dart' show UpdateService;
 import 'package:xtify_app/theme/app_theme.dart';
 import 'package:xtify_app/widgets/player_sheet.dart';
 import 'package:xtify_app/widgets/signin_banner.dart';
+import 'package:xtify_app/widgets/update_banner.dart';
 
 Future<void> main() async {
   if (!isDesktopPlatform) return _start();
@@ -81,6 +83,7 @@ Future<void> _start() async {
   }
   if (isDesktopPlatform) await WindowChrome.instance.init();
   runApp(const XtifyApp());
+  UpdateService.instance.start();
   if (!isDesktopPlatform) {
     AudioUrlResolver.ensureInitialized()
         .then((_) => AudioUrlResolver.ensureModern())
@@ -259,6 +262,7 @@ class _MobileHomeState extends State<_MobileHome>
               child: Column(
                 children: [
                   const SignInAgainBanner(),
+                  const UpdateBanner(),
                   Expanded(
                     child: FadeTransition(
                       opacity: _fade,
