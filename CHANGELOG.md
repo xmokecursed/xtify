@@ -2,6 +2,15 @@
 All notable changes to **Xtify** are recorded here, newest first.
 ---
 
+## 3.3.0 - 2026-11-20
+
+**Feature** - Crash records from Android in the debug info
+
+- The copy debug info button now also includes Android's own record of how the earlier runs ended: crashed, crashed in native code, stopped responding, closed for low memory or closed by the user. Each record has the time, whether the app was in the foreground and how much memory it used. Native crashes and not-responding cases add a short readable part of Android's report.
+- Java and Kotlin crashes are written down the moment they happen, so the error and its stack are in the debug info after the app is reopened. The report also lists the phone model and Android version. Android's own records need Android 11 or newer, the crash note works on every version.
+- Each log line is now written to the saved file the moment it is logged. Before, the newest fraction of a second was held back for a short time, so a crash right then could lose the very lines that explain it.
+- Each saved log now notes the process id, so a run can be matched with Android's record of how it ended.
+
 ## 3.2.0 - 2026-11-20
 
 **Feature** - Logs that survive restarts

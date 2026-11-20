@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -22,20 +21,17 @@ class LogStore {
     this.keepSessions = 6,
     this.maxBytes = 160 * 1024,
     this.trimBytes = 96 * 1024,
-    this.flushDelay = const Duration(milliseconds: 300),
   });
 
   final Directory directory;
   final int keepSessions;
   final int maxBytes;
   final int trimBytes;
-  final Duration flushDelay;
 
   static final RegExp _name = RegExp(r'^session-(\d+)\.log$');
 
-  final StringBuffer _pending = StringBuffer();
-  Timer? _timer;
   File? _file;
+  RandomAccessFile? _out;
   String _header = '';
   int _size = 0;
   int _number = 0;
@@ -55,35 +51,26 @@ class LogStore {
     _number = next;
     _header = '=== session $next | $info ===';
     final file = File('${directory.path}${Platform.pathSeparator}session-$next.log');
-    final first = StringBuffer()..writeln(_header);
-    final bytes = utf8.encode(first.toString());
-    file.writeAsBytesSync(bytes);
+    final out = file.openSync(mode: FileMode.append);
+    final bytes = _encode(_header);
+    out.writeFromSync(bytes);
     _size = bytes.length;
     _file = file;
+    _out = out;
   }
 
   void add(String line) {
-    if (_file == null) return;
-    _pending.writeln(line);
-    _timer ??= Timer(flushDelay, flush);
-  }
-
-  void flush() {
-    _timer?.cancel();
-    _timer = null;
-    final file = _file;
-    if (file == null || _pending.isEmpty) return;
-    final bytes = utf8.encode(_pending.toString());
-    _pending.clear();
+    final out = _out;
+    if (out == null) return;
     try {
-      file.writeAsBytesSync(bytes, mode: FileMode.append);
+      final bytes = _encode(line);
+      out.writeFromSync(bytes);
       _size += bytes.length;
-      if (_size > maxBytes) _trim(file);
+      if (_size > maxBytes) _trim();
     } catch (_) {}
   }
 
   List<LogSession> sessions() {
-    flush();
     final found = <LogSession>[];
     try {
       for (final entry in _entries()) {
@@ -96,18 +83,31 @@ class LogStore {
     return found;
   }
 
-  void _trim(File file) {
+  static List<int> _encode(String line) => [...utf8.encode(line), 10];
+
+  void _trim() {
+    final file = _file;
+    final out = _out;
+    if (file == null || out == null) return;
     final bytes = file.readAsBytesSync();
+    _size = bytes.length;
     var cut = bytes.length - trimBytes;
     if (cut <= 0) return;
     final newline = bytes.indexOf(10, cut);
     if (newline != -1) cut = newline + 1;
-    final head = StringBuffer()
-      ..writeln(_header)
-      ..writeln('(older lines were removed to keep this log small)');
-    final kept = <int>[...utf8.encode(head.toString()), ...bytes.sublist(cut)];
-    file.writeAsBytesSync(kept);
-    _size = kept.length;
+    final kept = <int>[
+      ..._encode(_header),
+      ..._encode('(older lines were removed to keep this log small)'),
+      ...bytes.sublist(cut),
+    ];
+    _out = null;
+    out.closeSync();
+    try {
+      file.writeAsBytesSync(kept);
+      _size = kept.length;
+    } finally {
+      _out = file.openSync(mode: FileMode.append);
+    }
   }
 
   List<_Entry> _entries() {

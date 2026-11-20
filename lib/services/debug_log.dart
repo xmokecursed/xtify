@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding, WidgetsBindingObserver;
 import 'package:path_provider/path_provider.dart';
+import 'android_records.dart';
 import 'connectivity_service.dart';
 import 'cookie_service.dart';
 import 'download_service.dart';
@@ -16,7 +17,8 @@ import 'log_store.dart';
 class DebugLog {
   DebugLog._();
   static const int _max = 400;
-  static const List<int> _budgets = [30000, 24000, 6000];
+  static const List<int> _budgets = [27000, 19000, 5000];
+  static const int _recordsLimit = 12000;
   static final Queue<String> _lines = Queue<String>();
   static LogStore? _store;
   static String _version = '?';
@@ -30,7 +32,7 @@ class DebugLog {
       final store = LogStore(Directory('${base.path}${Platform.pathSeparator}logs'));
       final system = '${Platform.operatingSystem} ${Platform.operatingSystemVersion}'
           .replaceAll(RegExp(r'\s+'), ' ');
-      store.open('Xtify $_version | $system | '
+      store.open('Xtify $_version | $system | pid $pid | '
           'started ${DateTime.now().toIso8601String()}');
       for (final line in _lines) {
         store.add(line);
@@ -64,7 +66,6 @@ class DebugLog {
   static void flush() {
     _closeRepeats();
     _last = null;
-    _store?.flush();
   }
 
   static void install() {
@@ -84,7 +85,6 @@ class DebugLog {
           if (line.trim().isNotEmpty) add('  $line');
         }
         FlutterError.dumpErrorToConsole(details, forceReport: true);
-        _store?.flush();
       } else {
         add('FLUTTER ERROR: ${details.exceptionAsString()}');
         previousOnError?.call(details);
@@ -92,7 +92,6 @@ class DebugLog {
     };
     PlatformDispatcher.instance.onError = (error, stack) {
       add('UNCAUGHT: $error\n${_trim(stack)}');
-      _store?.flush();
       return false;
     };
   }
@@ -190,11 +189,23 @@ class DebugLog {
       ..writeln('Downloads: ${DownloadService.instance.items.value.length}, '
           'history: ${HistoryService.instance.tracks.value.length}')
       ..writeln();
+    _writeRecords(b);
     _writeLogs(b);
     return b.toString();
   }
 
   static Future<void> copy() => Clipboard.setData(ClipboardData(text: report()));
+
+  static void _writeRecords(StringBuffer b) {
+    final store = _store;
+    if (store == null) return;
+    final text = AndroidRecords.read(store.directory, _recordsLimit);
+    if (text.isEmpty) return;
+    b
+      ..writeln('--- Android records ---')
+      ..writeln(text)
+      ..writeln();
+  }
 
   static void _writeLogs(StringBuffer b) {
     flush();
