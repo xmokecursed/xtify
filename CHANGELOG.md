@@ -12,6 +12,8 @@ All notable changes to **Xtify** are recorded here, newest first.
 - Saved logs are capped: the last 6 runs are kept, each trimmed to its newest part, about 1 MB at most in total. The same line repeated in a row is folded into one.
 - Logs stay on the device and are only shared when you press the copy button.
 
+Commits: [`56f6180`](https://github.com/xmokecursed/xtify/commit/56f6180)
+
 ## 3.1.0 - 2026-11-19
 
 **Feature** - Update notice
@@ -20,6 +22,8 @@ All notable changes to **Xtify** are recorded here, newest first.
 - Android and desktop are checked separately, so each one only hears about its own releases.
 - The check runs in the background at launch and again every few hours while the app stays open. It stays silent when there is no connection or the check fails.
 - The app version is now 3.1.0, matching this changelog (it still said 1.0.0 before).
+
+Commits: [`6edf92d`](https://github.com/xmokecursed/xtify/commit/6edf92d)
 
 ## 3.0.3 - 2026-11-17
 
