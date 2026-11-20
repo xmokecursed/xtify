@@ -1,18 +1,71 @@
 import 'dart:collection';
+import 'dart:convert' show LineSplitter;
 import 'dart:io';
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding, WidgetsBindingObserver;
+import 'package:path_provider/path_provider.dart';
 import 'connectivity_service.dart';
 import 'cookie_service.dart';
 import 'download_service.dart';
 import 'history_service.dart';
 import 'audio_service.dart';
+import 'log_store.dart';
 
 class DebugLog {
   DebugLog._();
   static const int _max = 400;
+  static const List<int> _budgets = [30000, 24000, 6000];
   static final Queue<String> _lines = Queue<String>();
+  static LogStore? _store;
+  static String _version = '?';
+  static String? _last;
+  static int _repeats = 0;
+
+  static Future<void> startSaving() async {
+    try {
+      _version = await _readVersion();
+      final base = await getApplicationSupportDirectory();
+      final store = LogStore(Directory('${base.path}${Platform.pathSeparator}logs'));
+      final system = '${Platform.operatingSystem} ${Platform.operatingSystemVersion}'
+          .replaceAll(RegExp(r'\s+'), ' ');
+      store.open('Xtify $_version | $system | '
+          'started ${DateTime.now().toIso8601String()}');
+      for (final line in _lines) {
+        store.add(line);
+      }
+      _store = store;
+      WidgetsBinding.instance.addObserver(_Watcher());
+      add('log: saved on this device, session ${store.number}');
+    } catch (e) {
+      debugPrint('log: could not save to disk: $e');
+    }
+  }
+
+  static Future<String> _readVersion() async {
+    try {
+      final text = await rootBundle.loadString('pubspec.yaml');
+      final m = RegExp(r'^version:\s*(\S+)', multiLine: true).firstMatch(text);
+      return m?.group(1) ?? '?';
+    } catch (_) {
+      return '?';
+    }
+  }
+
+  static String _memory() {
+    try {
+      return '${(ProcessInfo.currentRss / (1024 * 1024)).round()} MB';
+    } catch (_) {
+      return '?';
+    }
+  }
+
+  static void flush() {
+    _closeRepeats();
+    _last = null;
+    _store?.flush();
+  }
 
   static void install() {
     final original = debugPrint;
@@ -31,6 +84,7 @@ class DebugLog {
           if (line.trim().isNotEmpty) add('  $line');
         }
         FlutterError.dumpErrorToConsole(details, forceReport: true);
+        _store?.flush();
       } else {
         add('FLUTTER ERROR: ${details.exceptionAsString()}');
         previousOnError?.call(details);
@@ -38,6 +92,7 @@ class DebugLog {
     };
     PlatformDispatcher.instance.onError = (error, stack) {
       add('UNCAUGHT: $error\n${_trim(stack)}');
+      _store?.flush();
       return false;
     };
   }
@@ -82,11 +137,31 @@ class DebugLog {
   }
 
   static void add(String message) {
+    final text = _clean(message);
+    if (text == _last) {
+      _repeats++;
+      return;
+    }
+    _closeRepeats();
+    _last = text;
+    _put(text);
+  }
+
+  static void _closeRepeats() {
+    if (_repeats == 0) return;
+    final count = _repeats;
+    _repeats = 0;
+    _put('  (the line above repeated $count more times)');
+  }
+
+  static void _put(String text) {
     final t = DateTime.now().toIso8601String().substring(11, 19);
-    _lines.addLast('$t ${_clean(message)}');
+    final line = '$t $text';
+    _lines.addLast(line);
     while (_lines.length > _max) {
       _lines.removeFirst();
     }
+    _store?.add(line);
   }
 
   static String _clean(String m) {
@@ -105,6 +180,7 @@ class DebugLog {
     final b = StringBuffer()
       ..writeln('Xtify debug info')
       ..writeln('Time: ${DateTime.now().toIso8601String()}')
+      ..writeln('App: $_version')
       ..writeln('Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
       ..writeln('Online: ${ConnectivityService.instance.online.value}')
       ..writeln('Signed in to YouTube: ${CookieService.instance.signedInListener.value}'
@@ -113,11 +189,72 @@ class DebugLog {
       ..writeln('Player: ${ps.processingState.name}, playing=${ps.playing}')
       ..writeln('Downloads: ${DownloadService.instance.items.value.length}, '
           'history: ${HistoryService.instance.tracks.value.length}')
-      ..writeln()
-      ..writeln('--- last log lines ---')
-      ..writeAll(_lines, '\n');
+      ..writeln();
+    _writeLogs(b);
     return b.toString();
   }
 
   static Future<void> copy() => Clipboard.setData(ClipboardData(text: report()));
+
+  static void _writeLogs(StringBuffer b) {
+    flush();
+    final store = _store;
+    final sessions = store == null ? const <LogSession>[] : store.sessions();
+    if (store == null || sessions.isEmpty) {
+      b.writeln('--- last log lines ---');
+      for (final line in _lines) {
+        b.writeln(line);
+      }
+      return;
+    }
+    final sections = <String>[];
+    for (var i = sessions.length - 1, rank = 0;
+        i >= 0 && rank < _budgets.length;
+        i--, rank++) {
+      final s = sessions[i];
+      final label = s.number == store.number
+          ? 'this session'
+          : rank <= 1
+              ? 'previous session'
+              : 'earlier session';
+      sections.add(_section(label, s.text, _budgets[rank]));
+    }
+    for (final section in sections.reversed) {
+      b.write(section);
+    }
+  }
+
+  static String _section(String label, String text, int budget) {
+    final lines = const LineSplitter().convert(text);
+    final first = lines.isNotEmpty && lines.first.startsWith('=== ') ? 1 : 0;
+    var start = lines.length;
+    var used = 0;
+    while (start > first) {
+      final cost = lines[start - 1].length + 1;
+      if (used + cost > budget) break;
+      used += cost;
+      start--;
+    }
+    final out = StringBuffer()..writeln('--- $label ---');
+    if (first == 1) out.writeln(lines.first);
+    if (start > first) out.writeln('(${start - first} earlier lines left out)');
+    for (var i = start; i < lines.length; i++) {
+      out.writeln(lines[i]);
+    }
+    return out.toString();
+  }
+}
+
+class _Watcher with WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    DebugLog.add('app: ${state.name}, memory ${DebugLog._memory()}');
+    if (state != AppLifecycleState.resumed) DebugLog.flush();
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    DebugLog.add('app: low memory warning, memory ${DebugLog._memory()}');
+    DebugLog.flush();
+  }
 }

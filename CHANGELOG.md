@@ -2,6 +2,16 @@
 All notable changes to **Xtify** are recorded here, newest first.
 ---
 
+## 3.2.0 - 2026-11-20
+
+**Feature** - Logs that survive restarts
+
+- The debug log is now saved on the device, so the lines from just before a crash are still there after the app is reopened.
+- The copy button now includes this run, the run before it and a short part of the one before that, each marked with the app version and start time.
+- The app also records when it goes to the background or comes back, memory warnings and each step of startup. That tells a crash while the app was open apart from Android closing it in the background, and shows where a crash at launch stopped.
+- Saved logs are capped: the last 6 runs are kept, each trimmed to its newest part, about 1 MB at most in total. The same line repeated in a row is folded into one.
+- Logs stay on the device and are only shared when you press the copy button.
+
 ## 3.1.0 - 2026-11-19
 
 **Feature** - Update notice

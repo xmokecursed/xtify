@@ -52,8 +52,10 @@ Future<void> main() async {
 Future<void> _start() async {
   WidgetsFlutterBinding.ensureInitialized();
   DebugLog.install();
+  await DebugLog.startSaving();
   PaintingBinding.instance.imageCache.maximumSize = 120;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 60 << 20;
+  debugPrint('startup: audio engine');
   JustAudioMediaKit.title = 'Xtify';
   JustAudioMediaKit.ensureInitialized(linux: false);
   
@@ -63,26 +65,41 @@ Future<void> _start() async {
   ]);
   
   try {
+    debugPrint('startup: audio service');
     await _setupAudioService();
+    debugPrint('startup: cookies');
     await CookieService.instance.init();
+    debugPrint('startup: connectivity');
     await ConnectivityService.instance.init();
+    debugPrint('startup: audio source settings');
     await AudioUrlResolver.loadPreferred();
+    debugPrint('startup: queue settings');
     await AutoQueueSettings.instance.init();
+    debugPrint('startup: history');
     await HistoryService.instance.init();
+    debugPrint('startup: artist mixes');
     await ArtistMixService.instance.init();
+    debugPrint('startup: playlists');
     await PlaylistService.instance.init();
+    debugPrint('startup: playlist import');
     await PlaylistImportService.instance.init();
+    debugPrint('startup: downloads');
     await DownloadService.instance.init();
+    debugPrint('startup: search history');
     await SearchHistoryService.instance.init();
+    debugPrint('startup: feed');
     await FeedService.instance.init();
+    debugPrint('startup: restoring the last track');
     await XtifyAudioHandler.instance.restoreLast();
     if (isDesktopPlatform) await XtifyAudioHandler.instance.restoreVolume();
   } catch (e) {
     debugPrint('Setup error: $e');
     rethrow;
   }
+  debugPrint('startup: interface');
   if (isDesktopPlatform) await WindowChrome.instance.init();
   runApp(const XtifyApp());
+  debugPrint('startup: ready');
   UpdateService.instance.start();
   if (!isDesktopPlatform) {
     AudioUrlResolver.ensureInitialized()
