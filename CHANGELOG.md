@@ -2,6 +2,14 @@
 All notable changes to **Xtify** are recorded here, newest first.
 ---
 
+## 3.3.1 - 2026-11-21
+
+**Feature** - Added discord presence for Xtify
+
+- Discord profiles now shows "listening to Xtify" presence just like spotify/apple music
+
+Commits: [`8a7c2df`](https://github.com/xmokecursed/xtify/commit/8a7c2df), [`2add5c2`](https://github.com/xmokecursed/xtify/commit/2add5c2)
+
 ## 3.3.0 - 2026-11-20
 
 **Feature** - Crash records from Android in the debug info
