@@ -33,6 +33,7 @@ dependencies:
   flutter_taglib: ^1.5.2
   url_launcher: ^6.3.1
   file_picker: ^13.1.0
+  discord_rich_presence: ^1.1.1
 
 dev_dependencies:
   flutter_test:

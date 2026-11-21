@@ -27,6 +27,7 @@ import 'package:xtify_app/services/artist_mix_service.dart';
 import 'package:xtify_app/services/playlist_import_service.dart';
 import 'package:xtify_app/services/playlist_service.dart';
 import 'package:xtify_app/services/debug_log.dart';
+import 'package:xtify_app/services/discord_presence_service.dart';
 import 'package:xtify_app/services/download_service.dart';
 import 'package:xtify_app/services/feed_service.dart';
 import 'package:xtify_app/services/search_history_service.dart';
@@ -101,6 +102,7 @@ Future<void> _start() async {
   runApp(const XtifyApp());
   debugPrint('startup: ready');
   UpdateService.instance.start();
+  if (isDesktopPlatform) DiscordPresenceService.instance.start();
   if (!isDesktopPlatform) {
     AudioUrlResolver.ensureInitialized()
         .then((_) => AudioUrlResolver.ensureModern())
