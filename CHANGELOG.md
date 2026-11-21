@@ -2,7 +2,7 @@
 All notable changes to **Xtify** are recorded here, newest first.
 ---
 
-## 3.3.1 - 2026-11-21
+## 3.4.0 - 2026-11-21
 
 **Feature** - Added discord presence for Xtify
 
