@@ -15,16 +15,44 @@ class _Shown {
   const _Shown(this.id, this.start, this.end);
 }
 
+class _XtifyActivity extends Activity {
+  _XtifyActivity({
+    required String name,
+    String? details,
+    String? state,
+    ActivityType type = ActivityType.playing,
+    ActivityTimestamps? timestamps,
+    ActivityAssets? assets,
+  }) : super(
+          name: name,
+          details: details,
+          state: state,
+          type: type,
+          timestamps: timestamps,
+          assets: assets,
+        );
+
+  @override
+  Map<String, dynamic> toJson() => {
+        ...super.toJson(),
+        'buttons': [
+          {'label': 'View Xtify', 'url': DiscordPresenceService._websiteUrl},
+        ],
+      };
+}
+
 class DiscordPresenceService {
   DiscordPresenceService._();
   static final DiscordPresenceService instance = DiscordPresenceService._();
 
   static const String _applicationId = '1570838705583951982';
-  static const String _fallbackArt =
+  static const String _appIcon =
       'https://raw.githubusercontent.com/xmokecursed/xtify/main/assets/icon/logo.png';
+  static const String _fallbackArt = _appIcon;
+  static const String _websiteUrl = 'https://xtify.localplayer.dev';
 
-  static const Duration _pauseGrace = Duration(seconds: 10);
-  static const Duration _minGap = Duration(seconds: 4);
+  static const Duration _pauseGrace = Duration(seconds: 3);
+  static const Duration _minGap = Duration(seconds: 3);
   static const Duration _retryGap = Duration(seconds: 20);
   static const Duration _drift = Duration(seconds: 2);
 
@@ -108,7 +136,7 @@ class DiscordPresenceService {
 
     final track = handler.currentTrack;
     final artist = item.artist?.trim() ?? '';
-    final activity = Activity(
+    final activity = _XtifyActivity(
       name: 'Xtify',
       type: ActivityType.listening,
       details: _clip(item.title),
@@ -116,6 +144,7 @@ class DiscordPresenceService {
       timestamps: ActivityTimestamps(start: start, end: end),
       assets: ActivityAssets(
         largeImage: _art(item, track?.id == item.id ? track?.imageUrl : null),
+        smallImage: _appIcon,
       ),
     );
 
