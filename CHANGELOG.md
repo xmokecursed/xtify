@@ -11,6 +11,8 @@ All notable changes to **Xtify** are recorded here, newest first.
 - Each log line is now written to the saved file the moment it is logged. Before, the newest fraction of a second was held back for a short time, so a crash right then could lose the very lines that explain it.
 - Each saved log now notes the process id, so a run can be matched with Android's record of how it ended.
 
+Commits: [`22ae835`](https://github.com/xmokecursed/xtify/commit/22ae835)
+
 ## 3.2.0 - 2026-11-20
 
 **Feature** - Logs that survive restarts
