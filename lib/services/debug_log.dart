@@ -13,6 +13,7 @@ import 'download_service.dart';
 import 'history_service.dart';
 import 'audio_service.dart';
 import 'log_store.dart';
+import 'vault.dart';
 
 class DebugLog {
   DebugLog._();
@@ -181,6 +182,7 @@ class DebugLog {
       ..writeln('Time: ${DateTime.now().toIso8601String()}')
       ..writeln('App: $_version')
       ..writeln('Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
+      ..writeln('Encrypted storage: ${Vault.instance.summary}')
       ..writeln('Online: ${ConnectivityService.instance.online.value}')
       ..writeln('Signed in to YouTube: ${CookieService.instance.signedInListener.value}'
           '${CookieService.instance.needsSignInListener.value ? ' (expired)' : ''}')

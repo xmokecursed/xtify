@@ -32,6 +32,7 @@ import 'package:xtify_app/services/download_service.dart';
 import 'package:xtify_app/services/feed_service.dart';
 import 'package:xtify_app/services/search_history_service.dart';
 import 'package:xtify_app/services/update_service.dart' show UpdateService;
+import 'package:xtify_app/services/vault.dart';
 import 'package:xtify_app/theme/app_theme.dart';
 import 'package:xtify_app/widgets/player_sheet.dart';
 import 'package:xtify_app/widgets/signin_banner.dart';
@@ -50,9 +51,19 @@ Future<void> main() async {
   );
 }
 
+Future<void> _step(String what, FutureOr<void> Function() run) async {
+  debugPrint('startup: $what');
+  try {
+    await run();
+  } catch (e, stack) {
+    debugPrint('startup: $what failed, going on without it: $e\n$stack');
+  }
+}
+
 Future<void> _start() async {
   WidgetsFlutterBinding.ensureInitialized();
   DebugLog.install();
+  await _step('secure storage', Vault.instance.init);
   await DebugLog.startSaving();
   PaintingBinding.instance.imageCache.maximumSize = 120;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 60 << 20;
@@ -65,37 +76,27 @@ Future<void> _start() async {
     DeviceOrientation.portraitDown,
   ]);
   
+  debugPrint('startup: audio service');
   try {
-    debugPrint('startup: audio service');
     await _setupAudioService();
-    debugPrint('startup: cookies');
-    await CookieService.instance.init();
-    debugPrint('startup: connectivity');
-    await ConnectivityService.instance.init();
-    debugPrint('startup: audio source settings');
-    await AudioUrlResolver.loadPreferred();
-    debugPrint('startup: queue settings');
-    await AutoQueueSettings.instance.init();
-    debugPrint('startup: history');
-    await HistoryService.instance.init();
-    debugPrint('startup: artist mixes');
-    await ArtistMixService.instance.init();
-    debugPrint('startup: playlists');
-    await PlaylistService.instance.init();
-    debugPrint('startup: playlist import');
-    await PlaylistImportService.instance.init();
-    debugPrint('startup: downloads');
-    await DownloadService.instance.init();
-    debugPrint('startup: search history');
-    await SearchHistoryService.instance.init();
-    debugPrint('startup: feed');
-    await FeedService.instance.init();
-    debugPrint('startup: restoring the last track');
-    await XtifyAudioHandler.instance.restoreLast();
-    if (isDesktopPlatform) await XtifyAudioHandler.instance.restoreVolume();
   } catch (e) {
     debugPrint('Setup error: $e');
     rethrow;
+  }
+  await _step('cookies', CookieService.instance.init);
+  await _step('connectivity', ConnectivityService.instance.init);
+  await _step('audio source settings', AudioUrlResolver.loadPreferred);
+  await _step('queue settings', AutoQueueSettings.instance.init);
+  await _step('history', HistoryService.instance.init);
+  await _step('artist mixes', ArtistMixService.instance.init);
+  await _step('playlists', PlaylistService.instance.init);
+  await _step('playlist import', PlaylistImportService.instance.init);
+  await _step('downloads', DownloadService.instance.init);
+  await _step('search history', SearchHistoryService.instance.init);
+  await _step('feed', FeedService.instance.init);
+  await _step('restoring the last track', XtifyAudioHandler.instance.restoreLast);
+  if (isDesktopPlatform) {
+    await _step('restoring the volume', XtifyAudioHandler.instance.restoreVolume);
   }
   debugPrint('startup: interface');
   if (isDesktopPlatform) await WindowChrome.instance.init();

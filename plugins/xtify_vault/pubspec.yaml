@@ -1,0 +1,19 @@
+name: xtify_vault
+description: "Keeps the key that protects Xtify's saved data in the Android Keystore."
+version: 1.0.0
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.xmokecursed.xtify.vault
+        pluginClass: XtifyVaultPlugin

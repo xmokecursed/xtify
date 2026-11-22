@@ -87,9 +87,20 @@ There is no server to set up. Search, recommendations and playlist import all ru
 Most songs play without it. YouTube sometimes refuses requests that don't look signed in (*"Sign in to confirm you're not a bot"*), and signing in fixes that.
 
 - You log in on a normal Google page inside the app. Xtify NEVER sees your password.
-- Only the session cookies are kept, in the app's private storage on your phone. They are only ever sent to YouTube.
+- Only the session cookies are kept, encrypted, in the app's private storage on your phone. They are only ever sent to YouTube.
 - If the login expires, a *Sign in again* notice will appear again.
 - Tip: use a secondary Google account. Automated-looking use can, *rarely, get an account flagged.
+
+---
+
+## Privacy and security
+
+Xtify has no account and no server of its own. What it knows about you stays on your device.
+
+- Your playlists, favourites, history, searches, settings and sign-in cookies are stored encrypted. The key is kept by the system: in the Android Keystore on Android, and tied to your Windows account on Windows. Other programs that open Xtify's files only see scrambled data.
+- This protects the files from other programs and from anyone who copies them. It cannot stop malware that fully controls your device while you are signed in, because such malware can ask the system for the key in the same way Xtify does.
+- Downloaded songs and their cover art are normal audio and image files you can play anywhere, so they are not encrypted.
+- Android's cloud backup is off for Xtify, so nothing from the app is uploaded to a backup.
 
 ---
 

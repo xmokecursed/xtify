@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_prefs.dart';
 import 'cookie_service.dart';
 
 class CookieRefreshService {
@@ -20,7 +20,7 @@ class CookieRefreshService {
       if (_running) return;
       if (DateTime.now().difference(_lastAttempt) < const Duration(minutes: 5)) return;
       if (!CookieService.instance.signedInListener.value) return;
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SecurePrefs.getInstance();
       final last = prefs.getInt(_lastKey) ?? 0;
       if (DateTime.now().millisecondsSinceEpoch - last < maxAge.inMilliseconds) return;
       await _refresh(prefs);
@@ -29,7 +29,7 @@ class CookieRefreshService {
     }
   }
 
-  Future<void> _refresh(SharedPreferences prefs) async {
+  Future<void> _refresh(SecurePrefs prefs) async {
     _running = true;
     _lastAttempt = DateTime.now();
     HeadlessInAppWebView? web;

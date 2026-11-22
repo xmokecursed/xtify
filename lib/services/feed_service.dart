@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_prefs.dart';
 import '../models/track_model.dart';
 import 'artist_mix_service.dart';
 import 'track_lookup.dart';
@@ -22,12 +22,10 @@ class FeedService {
       DateTime.now().millisecondsSinceEpoch - at < _ttl.inMilliseconds;
 
   Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SecurePrefs.getInstance();
     final trend = _load(prefs.getString(_trendKey));
     trending.value = trend.$2;
     _trendAt = trend.$1;
-    await prefs.remove('feed_made_for_you');
-    await prefs.remove('feed_made_sig');
   }
 
   (int, List<Track>) _load(String? raw) {
@@ -44,7 +42,7 @@ class FeedService {
   }
 
   Future<void> _save(String key, List<Track> tracks) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SecurePrefs.getInstance();
     await prefs.setString(
       key,
       json.encode({

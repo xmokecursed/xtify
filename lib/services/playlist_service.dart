@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/playlist_model.dart';
 import '../models/track_model.dart';
+import 'vault.dart';
 
 class PlaylistService {
   PlaylistService._();
@@ -13,20 +14,27 @@ class PlaylistService {
 
   final ValueNotifier<List<Playlist>> playlists =
       ValueNotifier<List<Playlist>>(const []);
-  File? _file;
+  static const String _vaultName = 'playlists';
+  bool _started = false;
 
   Future<void> init() async {
-    final dir = await getApplicationSupportDirectory();
-    _file = File('${dir.path}/playlists.json');
+    _started = true;
+    String? text;
     try {
-      if (await _file!.exists()) {
-        final data = json.decode(await _file!.readAsString()) as List<dynamic>;
+      final dir = await getApplicationSupportDirectory();
+      final old = File('${dir.path}${Platform.pathSeparator}playlists.json');
+      text = await Vault.instance.readTextOrMove(_vaultName, old, isValid: Vault.isJsonList);
+      if (text != null) {
+        final data = json.decode(text) as List<dynamic>;
         playlists.value = data
             .map((e) => Playlist.fromJson(e as Map<String, dynamic>))
             .toList();
       }
     } catch (e) {
       debugPrint('playlists load failed: $e');
+      if (text != null) {
+        await Vault.instance.writeText('$_vaultName-unreadable', text);
+      }
     }
     await _ensureFavourites();
   }
@@ -205,14 +213,13 @@ class PlaylistService {
   }
 
   Future<void> _save() async {
-    final f = _file;
-    if (f == null) return;
+    if (!_started) return;
     try {
-      final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(
+      final saved = await Vault.instance.writeText(
+        _vaultName,
         json.encode(playlists.value.map((p) => p.toJson()).toList()),
       );
-      await tmp.rename(f.path);
+      if (!saved) debugPrint('playlist save failed: the secure store is not available');
     } catch (e) {
       debugPrint('playlist save failed: $e');
     }

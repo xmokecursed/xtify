@@ -9,6 +9,7 @@
 
 #include <memory>
 
+#include "vault_channel.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -40,6 +41,7 @@ class FlutterWindow : public Win32Window {
 
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       window_channel_;
+  std::unique_ptr<VaultChannel> vault_channel_;
   bool maximized_ = false;
 };
 

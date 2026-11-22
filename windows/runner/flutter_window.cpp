@@ -100,6 +100,8 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  vault_channel_ =
+      std::make_unique<VaultChannel>(flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   window_channel_ =
@@ -125,6 +127,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  vault_channel_ = nullptr;
   if (window_channel_) {
     window_channel_->SetMethodCallHandler(nullptr);
     window_channel_ = nullptr;

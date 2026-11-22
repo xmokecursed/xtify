@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_prefs.dart';
 import '../models/track_model.dart';
 import 'history_service.dart';
 import 'youtube_catalog.dart';
@@ -65,14 +65,16 @@ class ArtistMixService {
   Timer? _debounce;
   bool _running = false;
   bool _again = false;
+  String? _saved;
 
   static String _k(String artist) => artist.trim().toLowerCase();
 
   Future<void> init() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SecurePrefs.getInstance();
       final current = prefs.getString(_key);
       final raw = current ?? prefs.getString(_oldKey);
+      _saved = current;
       if (raw != null) {
         for (final e in json.decode(raw) as List<dynamic>) {
           final m = ArtistMix.fromJson(e as Map<String, dynamic>);
@@ -206,9 +208,10 @@ class ArtistMixService {
     try {
       final keep = _chosenArtists().map((a) => _k(a.name)).toSet();
       _cache.removeWhere((k, _) => !keep.contains(k));
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-          _key, json.encode(_cache.values.map((m) => m.toJson()).toList()));
+      final text = json.encode(_cache.values.map((m) => m.toJson()).toList());
+      if (text == _saved) return;
+      final prefs = await SecurePrefs.getInstance();
+      if (await prefs.setString(_key, text)) _saved = text;
       await prefs.remove(_oldKey);
     } catch (_) {}
   }

@@ -7,11 +7,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_taglib/flutter_taglib.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track_model.dart';
 import 'audio_url_resolver.dart';
 import 'lyrics_service.dart';
 import 'playlist_service.dart';
+import 'secure_prefs.dart';
+import 'vault.dart';
 
 class DownloadedItem {
   final Track track;
@@ -83,6 +84,7 @@ class DownloadService {
   static final DownloadService instance = DownloadService._();
 
   static const String _dirKey = 'download_dir_v1';
+  static const String _vaultName = 'downloads';
   static const int _chunk = 2 * 1024 * 1024;
 
   final ValueNotifier<Map<String, DownloadedItem>> items =
@@ -99,7 +101,7 @@ class DownloadService {
   final ValueNotifier<bool> customFolder = ValueNotifier<bool>(false);
 
   late Directory _support;
-  File? _file;
+  bool _started = false;
   String? _custom;
   final List<String> _queue = [];
   final Set<String> _cancelled = {};
@@ -109,16 +111,19 @@ class DownloadService {
 
   Future<void> init() async {
     _support = await getApplicationSupportDirectory();
-    _file = File('${_support.path}/downloads.json');
+    _started = true;
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SecurePrefs.getInstance();
       final c = prefs.getString(_dirKey);
       _custom = (c == null || c.isEmpty) ? null : c;
     } catch (_) {}
+    String? text;
     try {
-      if (await _file!.exists()) {
+      final old = File('${_support.path}${Platform.pathSeparator}downloads.json');
+      text = await Vault.instance.readTextOrMove(_vaultName, old, isValid: Vault.isJsonList);
+      if (text != null) {
         final out = <String, DownloadedItem>{};
-        for (final e in json.decode(await _file!.readAsString()) as List<dynamic>) {
+        for (final e in json.decode(text) as List<dynamic>) {
           final it = DownloadedItem.fromJson(e as Map<String, dynamic>);
           if (it != null && File(it.path).existsSync()) out[it.track.id] = it;
         }
@@ -126,6 +131,9 @@ class DownloadService {
       }
     } catch (e) {
       debugPrint('downloads load failed: $e');
+      if (text != null) {
+        await Vault.instance.writeText('$_vaultName-unreadable', text);
+      }
     }
     _publishFolder();
     _reindexCovers();
@@ -189,7 +197,7 @@ class DownloadService {
     }
     _custom = path;
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SecurePrefs.getInstance();
       if (path == null) {
         await prefs.remove(_dirKey);
       } else {
@@ -266,13 +274,13 @@ class DownloadService {
   }
 
   Future<void> _saveItems() async {
-    final f = _file;
-    if (f == null) return;
+    if (!_started) return;
     try {
-      final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(
-          json.encode(items.value.values.map((e) => e.toJson()).toList()));
-      await tmp.rename(f.path);
+      final saved = await Vault.instance.writeText(
+        _vaultName,
+        json.encode(items.value.values.map((e) => e.toJson()).toList()),
+      );
+      if (!saved) debugPrint('downloads save failed: the secure store is not available');
     } catch (e) {
       debugPrint('downloads save failed: $e');
     }

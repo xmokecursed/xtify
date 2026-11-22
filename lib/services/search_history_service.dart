@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_prefs.dart';
 
 class SearchHistoryService {
   SearchHistoryService._();
@@ -8,7 +8,7 @@ class SearchHistoryService {
   final ValueNotifier<List<String>> queries = ValueNotifier<List<String>>(const []);
 
   Future<void> init() async {
-    queries.value = (await SharedPreferences.getInstance()).getStringList('search_history') ?? const [];
+    queries.value = (await SecurePrefs.getInstance()).getStringList('search_history') ?? const [];
   }
 
   Future<void> add(String query) {
@@ -23,6 +23,6 @@ class SearchHistoryService {
 
   Future<void> _set(List<String> list) async {
     queries.value = list;
-    await (await SharedPreferences.getInstance()).setStringList('search_history', list);
+    await (await SecurePrefs.getInstance()).setStringList('search_history', list);
   }
 }

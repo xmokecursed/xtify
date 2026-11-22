@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_prefs.dart';
 import 'package:extractor/extractor.dart';
 import 'package:flutter/foundation.dart';
 import '../services/audio_url_resolver.dart';
@@ -19,7 +19,7 @@ class YtDlpUpdateService {
         await Future.delayed(const Duration(seconds: 15));
       }
 
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SecurePrefs.getInstance();
       final lastUpdate = prefs.getInt(_lastUpdateKey);
       final now = DateTime.now().millisecondsSinceEpoch;
 

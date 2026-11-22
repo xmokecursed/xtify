@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_prefs.dart';
 import '../models/track_model.dart';
 
 class ArtistEntry {
@@ -46,7 +46,7 @@ class HistoryService {
       ValueNotifier<List<ArtistEntry>>(const []);
 
   Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SecurePrefs.getInstance();
     final out = <Track>[];
     for (final s in prefs.getStringList(_key) ?? const <String>[]) {
       try {
@@ -85,7 +85,7 @@ class HistoryService {
   }
 
   Future<void> _persist() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SecurePrefs.getInstance();
     await prefs.setStringList(
       _key,
       tracks.value.map((x) => json.encode(x.toJson())).toList(),
@@ -157,7 +157,7 @@ class HistoryService {
   Future<void> clear() async {
     tracks.value = const [];
     artists.value = const [];
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SecurePrefs.getInstance();
     await prefs.remove(_key);
     await prefs.remove(_artistKey);
   }

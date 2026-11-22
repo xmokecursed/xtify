@@ -7,7 +7,7 @@ import '../services/audio_url_resolver.dart';
 import '../services/connectivity_service.dart';
 import '../services/download_service.dart';
 import '../services/history_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_prefs.dart';
 import 'artist_credit.dart';
 import 'auto_queue_service.dart';
 import 'auto_queue_settings.dart';
@@ -414,14 +414,14 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
   void _savePosition(Duration pos) {
     _lastSaved = DateTime.now();
-    SharedPreferences.getInstance().then((p) => p.setInt('last_pos_ms', pos.inMilliseconds));
+    SecurePrefs.getInstance().then((p) => p.setInt('last_pos_ms', pos.inMilliseconds));
   }
 
   Future<void> restoreLast() async {
     final last = HistoryService.instance.tracks.value.firstOrNull;
     if (last == null || _currentTrack != null) return;
     final item = createMediaItem(last);
-    final saved = (await SharedPreferences.getInstance()).getInt('last_pos_ms') ?? 0;
+    final saved = (await SecurePrefs.getInstance()).getInt('last_pos_ms') ?? 0;
     var pos = Duration(milliseconds: saved);
     final total = item.duration;
     if (total != null && pos >= total - const Duration(seconds: 3)) pos = Duration.zero;
@@ -1043,7 +1043,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
     volume.value = v;
     _volumeSaveTimer?.cancel();
     _volumeSaveTimer = Timer(const Duration(milliseconds: 400), () {
-      SharedPreferences.getInstance().then((p) => p.setDouble('volume', v));
+      SecurePrefs.getInstance().then((p) => p.setDouble('volume', v));
     });
     await _player.setVolume(v);
   }
@@ -1058,7 +1058,7 @@ class XtifyAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> restoreVolume() async {
-    final saved = (await SharedPreferences.getInstance()).getDouble('volume');
+    final saved = (await SecurePrefs.getInstance()).getDouble('volume');
     if (saved == null) return;
     final v = saved.clamp(0.0, 1.0).toDouble();
     volume.value = v;

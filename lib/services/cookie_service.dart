@@ -3,7 +3,30 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_prefs.dart';
+import 'vault.dart';
+
+class CookieLoan {
+  CookieLoan._(this._file, this._original) {
+    _expiry = Timer(_lifetime, () => unawaited(giveBack()));
+  }
+
+  static const Duration _lifetime = Duration(minutes: 3);
+
+  final File _file;
+  final String _original;
+  late final Timer _expiry;
+  bool _returned = false;
+
+  String get path => _file.path;
+
+  Future<void> giveBack() async {
+    if (_returned) return;
+    _returned = true;
+    _expiry.cancel();
+    await CookieService.instance._takeBack(_file, _original);
+  }
+}
 
 class CookieService {
   CookieService._internal();
@@ -11,7 +34,9 @@ class CookieService {
   static CookieService get instance => _instance;
 
   static const String _signedInKey = 'yt_signed_in';
-  static const String _cookieFileName = 'youtube_cookies.txt';
+  static const String _jarName = 'yt-cookies';
+  static const String _legacyFileName = 'youtube_cookies.txt';
+  static const String _loanFolder = 'ytdlp-cookies';
   static const Set<String> _authNames = {
     'SAPISID', '__Secure-1PSID', '__Secure-3PSID', 'SID',
   };
@@ -38,55 +63,167 @@ class CookieService {
   }
 
   Future<void> init() async {
+    await _moveLegacyFile();
+    await _sweepLoans();
     await _loadSignedInStatus();
   }
 
   Future<void> _loadSignedInStatus() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SecurePrefs.getInstance();
     final signedInFromPrefs = prefs.getBool(_signedInKey) ?? false;
     final signedInFromCookie = await isSignedIn();
     _signedInNotifier.value = signedInFromPrefs || signedInFromCookie;
   }
 
   Future<bool> isSignedIn() async {
-    final file = await cookieFile();
-    if (file == null) {
+    try {
+      final jar = await _readJar();
+      return jar != null && _hasAuthLine(jar);
+    } catch (e) {
+      debugPrint('Error reading the saved cookies: $e');
       return false;
     }
+  }
+
+  Future<bool> hasCookies() async {
     try {
-      final content = await file.readAsString();
-      final lines = content.split('\n');
-      for (final line in lines) {
-        if (line.startsWith('#')) {
-          continue;
-        }
-        final parts = line.split('\t');
-        if (parts.length >= 7 && _authNames.contains(parts[5])) {
-          return true;
+      return await _readJar() != null;
+    } catch (e) {
+      debugPrint('Error reading the saved cookies: $e');
+      return false;
+    }
+  }
+
+  Future<CookieLoan?> lend() async {
+    try {
+      final jar = await _readJar();
+      if (jar == null) return null;
+      final dir = await _loanDirectory();
+      final file = File(
+        '${dir.path}${Platform.pathSeparator}jar-${DateTime.now().microsecondsSinceEpoch}.txt',
+      );
+      await file.writeAsString(jar, flush: true);
+      return CookieLoan._(file, jar);
+    } catch (e) {
+      debugPrint('Could not prepare the cookie file for yt-dlp: $e');
+      return null;
+    }
+  }
+
+  Future<void> _takeBack(File file, String original) async {
+    try {
+      if (await file.exists()) {
+        final after = await file.readAsString();
+        if (_hasAuthLine(after) &&
+            !setEquals(_dataLines(after), _dataLines(original))) {
+          await Vault.instance.writeText(_jarName, after);
         }
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Error reading cookie file: $e');
+      debugPrint('Could not read the cookie file back from yt-dlp: $e');
+    }
+    await Vault.wipe(file);
+  }
+
+  Future<Directory> _loanDirectory() async {
+    final base = await getTemporaryDirectory();
+    final dir = Directory('${base.path}${Platform.pathSeparator}$_loanFolder');
+    await dir.create(recursive: true);
+    return dir;
+  }
+
+  Future<void> _sweepLoans() async {
+    try {
+      final base = await getTemporaryDirectory();
+      final dir = Directory('${base.path}${Platform.pathSeparator}$_loanFolder');
+      if (!await dir.exists()) return;
+      final left = await dir.list(followLinks: false).where((e) => e is File).toList();
+      for (final file in left) {
+        await Vault.wipe(file as File);
+      }
+    } catch (e) {
+      debugPrint('Could not clean the temporary cookie folder: $e');
+    }
+  }
+
+  Future<String?> _readJar() async {
+    final stored = await Vault.instance.readText(_jarName);
+    if (stored != null && stored.trim().isNotEmpty) return stored;
+    final legacy = await _legacyFile();
+    if (legacy == null) return null;
+    final text = await legacy.readAsString();
+    return text.trim().isEmpty ? null : text;
+  }
+
+  Future<File?> _legacyFile() async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      final file = File('${dir.path}${Platform.pathSeparator}$_legacyFileName');
+      return await file.exists() ? file : null;
+    } catch (e) {
+      debugPrint('Error looking for the old cookie file: $e');
+      return null;
+    }
+  }
+
+  Future<void> _moveLegacyFile() async {
+    try {
+      final legacy = await _legacyFile();
+      if (legacy == null) {
+        await _removeLegacyFiles();
+        return;
+      }
+      final vault = Vault.instance;
+      await vault.init();
+      if (!vault.canWrite) return;
+      var stored = await vault.readText(_jarName);
+      if (stored == null || stored.trim().isEmpty) {
+        final text = await legacy.readAsString();
+        if (text.trim().isNotEmpty) {
+          if (!await vault.writeText(_jarName, text)) return;
+          stored = await vault.readText(_jarName);
+          if (stored == null || stored != text) return;
+        }
+      }
+      await _removeLegacyFiles();
+      debugPrint('The saved sign-in cookies are now stored encrypted');
+    } catch (e) {
+      debugPrint('Could not move the old cookie file: $e');
+    }
+  }
+
+  Future<void> _removeLegacyFiles() async {
+    try {
+      final dir = await getApplicationSupportDirectory();
+      for (final name in const [_legacyFileName, '$_legacyFileName.tmp']) {
+        await Vault.wipe(File('${dir.path}${Platform.pathSeparator}$name'));
+      }
+    } catch (e) {
+      debugPrint('Could not remove the old cookie file: $e');
+    }
+  }
+
+  static bool _hasAuthLine(String jar) {
+    for (final raw in jar.split('\n')) {
+      var line = raw;
+      if (line.startsWith('#HttpOnly_')) {
+        line = line.substring('#HttpOnly_'.length);
+      } else if (line.startsWith('#')) {
+        continue;
+      }
+      final parts = line.split('\t');
+      if (parts.length >= 7 && _authNames.contains(parts[5]) && parts[6].trim().isNotEmpty) {
+        return true;
       }
     }
     return false;
   }
 
-  Future<File?> cookieFile() async {
-    try {
-      final dir = await getApplicationSupportDirectory();
-      final file = File('${dir.path}/$_cookieFileName');
-      if (await file.exists()) {
-        return file;
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Error getting cookie file: $e');
-      }
-    }
-    return null;
-  }
+  static Set<String> _dataLines(String jar) => {
+        for (final line in jar.split('\n'))
+          if (line.trim().isNotEmpty && (!line.startsWith('#') || line.startsWith('#HttpOnly_')))
+            line.trimRight(),
+      };
 
   Future<List<Cookie>> _collectWebViewCookies() async {
     final manager = CookieManager.instance();
@@ -127,22 +264,22 @@ class CookieService {
         throw Exception('No cookies found to save');
       }
 
-      final dir = await getApplicationSupportDirectory();
-      await dir.create(recursive: true);
-      final file = File('${dir.path}/$_cookieFileName');
-      final tmp = File('${file.path}.tmp');
-      await tmp.writeAsString(_generateNetscapeCookieString(allCookies), flush: true);
-      await tmp.rename(file.path);
+      final saved = await Vault.instance
+          .writeText(_jarName, _generateNetscapeCookieString(allCookies));
+      if (!saved) {
+        throw Exception('The cookies could not be saved securely on this device');
+      }
+      await _removeLegacyFiles();
 
       final signedIn = _hasAuth(allCookies);
       _signedInNotifier.value = signedIn;
       if (signedIn) _needsSignInNotifier.value = false;
 
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SecurePrefs.getInstance();
       await prefs.setBool(_signedInKey, signedIn);
 
       if (kDebugMode) {
-        debugPrint('Cookie file saved: ${allCookies.length} cookies, signed in: $signedIn');
+        debugPrint('Cookies saved: ${allCookies.length} cookies, signed in: $signedIn');
       }
     } on Exception catch (e) {
       if (kDebugMode) {
@@ -183,49 +320,10 @@ class CookieService {
     return lines.join('\n');
   }
 
-  Future<String?> getYouTubeCookieHeader() async {
-    final file = await cookieFile();
-    if (file == null) {
-      return null;
-    }
-    try {
-      final content = await file.readAsString();
-      final lines = content.split('\n');
-      final List<String> cookieLines = [];
-      for (final line in lines) {
-        if (line.startsWith('#')) {
-          continue;
-        }
-        final parts = line.split('\t');
-        if (parts.length >= 7) {
-          final domain = parts[0];
-          if (domain.contains('youtube.com')) {
-            final name = parts[5];
-            final value = parts[6];
-            if (name.isNotEmpty && value.isNotEmpty) {
-              cookieLines.add('$name=$value');
-            }
-          }
-        }
-      }
-      if (cookieLines.isEmpty) {
-        return null;
-      }
-      return cookieLines.join('; ');
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Error getting YouTube cookie header: $e');
-      }
-      return null;
-    }
-  }
-
   Future<void> signOut() async {
     try {
-      final file = await cookieFile();
-      if (file != null) {
-        await file.delete();
-      }
+      await Vault.instance.delete(_jarName);
+      await _removeLegacyFiles();
 
       await CookieManager.instance().deleteCookies(
         url: WebUri('https://www.youtube.com'),
@@ -236,7 +334,7 @@ class CookieService {
 
       _signedInNotifier.value = false;
       _needsSignInNotifier.value = false;
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SecurePrefs.getInstance();
       await prefs.setBool(_signedInKey, false);
 
       if (kDebugMode) {

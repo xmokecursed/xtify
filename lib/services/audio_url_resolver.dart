@@ -8,7 +8,7 @@ import 'connectivity_service.dart';
 import 'cookie_refresh_service.dart';
 import 'innertube_client.dart';
 import '../utils/cache_util.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_prefs.dart';
 
 class ResolvedAudioUrl {
   final String url;
@@ -69,7 +69,7 @@ class AudioUrlResolver {
   static const String _prefKey = 'preferred_strategy_v5';
 
   static Future<void> loadPreferred() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SecurePrefs.getInstance();
     final v = prefs.getInt(_prefKey) ?? 1;
     if (v > nativeIndex && v < _strategies.length) preferredStrategy = v;
     unawaited(InnertubeClient.warmUp());
@@ -102,7 +102,7 @@ class AudioUrlResolver {
 
   static Future<void> rememberVersion(String? version) async {
     if (_dateOf(version) == 0) return;
-    final p = await SharedPreferences.getInstance();
+    final p = await SecurePrefs.getInstance();
     await p.setString(_verKey, version!);
   }
 
@@ -123,7 +123,7 @@ class AudioUrlResolver {
 
   static Future<bool> _checkYtDlp() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SecurePrefs.getInstance();
       if (_dateOf(prefs.getString(_verKey)) >= _minYtDlp) return true;
       final shown =
           (await _youtubeDL.getVersion().timeout(const Duration(seconds: 20))).youtubeDlVersion;
@@ -166,7 +166,7 @@ class AudioUrlResolver {
       final s = _strategies[found];
       if (!s.cookies && !s.native) {
         preferredStrategy = found;
-        SharedPreferences.getInstance().then((p) => p.setInt(_prefKey, found));
+        SecurePrefs.getInstance().then((p) => p.setInt(_prefKey, found));
       }
     }
     _cacheUtil.put(videoId, {
@@ -294,27 +294,30 @@ class AudioUrlResolver {
     }
     final cookiesFirst =
         s.client == null && DateTime.now().isBefore(_cookiesFirstUntil);
+    var withCookies = false;
     if (s.cookies || cookiesFirst) {
-      final f = await CookieService.instance.cookieFile();
-      if (f == null && s.cookies) throw Exception('not signed in (no cookie file)');
-      if (f != null) options['--cookies'] = f.path;
+      final has = await CookieService.instance.hasCookies();
+      if (!has && s.cookies) throw Exception('not signed in (no cookie file)');
+      withCookies = has;
     }
     final pageUrl = 'https://www.youtube.com/watch?v=$videoId';
     VideoInfo info;
     try {
-      info = await _runYtDlp(videoId, s.label, pageUrl, options, background: background);
+      info = await _runYtDlp(videoId, s.label, pageUrl, options,
+          background: background, withCookies: withCookies);
     } catch (e) {
       final msg = e.toString();
       final blocked = msg.contains('429') || msg.contains('Sign in to confirm');
-      final f = (!options.containsKey('--cookies') && s.client == null && blocked)
-          ? await CookieService.instance.cookieFile()
-          : null;
-      if (f == null) rethrow;
+      final retry = !withCookies &&
+          s.client == null &&
+          blocked &&
+          await CookieService.instance.hasCookies();
+      if (!retry) rethrow;
       _cookiesFirstUntil = DateTime.now().add(const Duration(minutes: 10));
       CookieRefreshService.instance.refreshIfOlderThan(const Duration(minutes: 30));
       debugPrint('[$videoId] ${s.label}: blocked, retrying with cookies');
-      info = await _runYtDlp(videoId, s.label, pageUrl, {...options, '--cookies': f.path},
-          background: background);
+      info = await _runYtDlp(videoId, s.label, pageUrl, options,
+          background: background, withCookies: true);
     }
 
     final format = _pickFormat(info);
@@ -370,7 +373,7 @@ class AudioUrlResolver {
 
   static Future<VideoInfo> _runYtDlp(
       String videoId, String label, String pageUrl, Map<String, String> options,
-      {required bool background}) async {
+      {required bool background, bool withCookies = false}) async {
     final queued = Stopwatch()..start();
     if (!background) _foregroundWaiting++;
     try {
@@ -387,17 +390,26 @@ class AudioUrlResolver {
     }
 
     final guard = Timer(const Duration(seconds: 90), free);
+    final CookieLoan? loan = withCookies ? await CookieService.instance.lend() : null;
+    if (withCookies && loan == null) {
+      guard.cancel();
+      free();
+      throw Exception('not signed in (no cookie file)');
+    }
     final waited = queued.elapsedMilliseconds;
     debugPrint('[$videoId] $label: yt-dlp start'
         '${waited > 300 ? ' (waited ${waited}ms for another lookup)' : ''}');
     final sw = Stopwatch()..start();
-    final call = _youtubeDL.getVideoInfoWithOptions(pageUrl, options);
+    final call = _youtubeDL.getVideoInfoWithOptions(
+        pageUrl, loan == null ? options : {...options, '--cookies': loan.path});
     unawaited(call.then<void>((_) {
       guard.cancel();
       free();
+      unawaited(loan?.giveBack());
     }, onError: (Object _) {
       guard.cancel();
       free();
+      unawaited(loan?.giveBack());
     }));
     final info = await call.timeout(Duration(seconds: _warm ? 20 : 45));
     _warm = true;

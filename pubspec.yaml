@@ -3,7 +3,7 @@ description: "A new Flutter project."
 
 publish_to: 'none'
 
-version: 3.3.0+30300
+version: 3.5.0+30500
 
 environment:
   sdk: ^3.13.5
@@ -34,6 +34,9 @@ dependencies:
   url_launcher: ^6.3.1
   file_picker: ^13.1.0
   discord_rich_presence: ^1.1.1
+  crypto: ^3.0.8
+  xtify_vault:
+    path: plugins/xtify_vault
 
 dev_dependencies:
   flutter_test:

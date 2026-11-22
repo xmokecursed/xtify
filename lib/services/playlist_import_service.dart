@@ -9,6 +9,7 @@ import 'playlist_service.dart';
 import 'playlist_source.dart';
 import 'spotify_reader.dart';
 import 'track_matcher.dart';
+import 'vault.dart';
 import 'youtube_api.dart';
 import 'youtube_playlist_reader.dart';
 
@@ -138,16 +139,19 @@ class PlaylistImportService {
 
   final ValueNotifier<List<ImportJob>> jobs = ValueNotifier<List<ImportJob>>(const []);
 
-  File? _file;
+  static const String _vaultName = 'import-reports';
+  bool _started = false;
   bool _running = false;
 
   Future<void> init() async {
+    String? text;
     try {
       final dir = await getApplicationSupportDirectory();
-      final file = File('${dir.path}/import_reports.json');
-      _file = file;
-      if (await file.exists()) {
-        final data = json.decode(await file.readAsString()) as List<dynamic>;
+      final old = File('${dir.path}${Platform.pathSeparator}import_reports.json');
+      _started = true;
+      text = await Vault.instance.readTextOrMove(_vaultName, old, isValid: Vault.isJsonList);
+      if (text != null) {
+        final data = json.decode(text) as List<dynamic>;
         final loaded = <ImportJob>[];
         for (final e in data) {
           final job = ImportJob.fromJson(e as Map<String, dynamic>);
@@ -157,6 +161,9 @@ class PlaylistImportService {
       }
     } catch (e) {
       debugPrint('import reports load failed: $e');
+      if (text != null) {
+        await Vault.instance.writeText('$_vaultName-unreadable', text);
+      }
     }
   }
 
@@ -403,16 +410,15 @@ class PlaylistImportService {
   }
 
   Future<void> _save() async {
-    final file = _file;
-    if (file == null) return;
+    if (!_started) return;
     try {
       final finished = jobs.value.where((j) => !j.active).toList()
         ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
-      final tmp = File('${file.path}.tmp');
-      await tmp.writeAsString(
+      final saved = await Vault.instance.writeText(
+        _vaultName,
         json.encode(finished.take(_keepReports).map((j) => j.toJson()).toList()),
       );
-      await tmp.rename(file.path);
+      if (!saved) debugPrint('import reports save failed: the secure store is not available');
     } catch (e) {
       debugPrint('import reports save failed: $e');
     }

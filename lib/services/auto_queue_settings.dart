@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_prefs.dart';
 import '../models/track_model.dart';
 import 'artist_credit.dart';
 
@@ -40,7 +40,7 @@ class AutoQueueSettings {
 
   Future<void> init() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SecurePrefs.getInstance();
       final saved = prefs.getString(_modeKey);
       mode.value = AutoQueueMode.values
           .firstWhere((m) => m.name == saved, orElse: () => AutoQueueMode.similar);
@@ -55,7 +55,7 @@ class AutoQueueSettings {
     focus.value = null;
     note.value = null;
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await SecurePrefs.getInstance();
       await prefs.setString(_modeKey, m.name);
     } catch (e) {
       debugPrint('auto-queue: could not save the setting: $e');
