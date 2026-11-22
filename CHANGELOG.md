@@ -4,7 +4,7 @@ All notable changes to **Xtify** are recorded here, newest first.
 
 ## 3.5.0 - 2026-11-22
 
-**Feature** - Saved data is now encrypted
+**Security** - Saved data is now encrypted
 
 - Your playlists and favourites, the downloads list, play history, search history, artist mixes and the home feed, playlist import reports, settings, where you stopped, and the YouTube sign-in cookies are now stored encrypted on the device. A program that only reads Xtify's files, a virus for example, now finds scrambled data it cannot read or change without being noticed.
 - The key is not stored next to the data. On Android it is kept in the Android Keystore, which never hands the key out. On Windows it is locked to your Windows account, so it only opens while you are signed in to that account.
@@ -15,7 +15,8 @@ All notable changes to **Xtify** are recorded here, newest first.
 - The copy debug info button now shows whether encryption is on.
 - A problem in one step of startup no longer stops the whole app from opening. Each step recovers on its own and the log says which one failed. The key store gets 8 seconds to answer, after that the app goes on without it.
 - Artist mixes are no longer rewritten to storage when nothing changed.
-- The app version is now 3.5.0, matching this changelog (it still said 3.3.0, the Discord release did not change it).
+
+Commits: [`9029452`](https://github.com/xmokecursed/xtify/commit/9029452)
 
 ## 3.4.0 - 2026-11-21
 
