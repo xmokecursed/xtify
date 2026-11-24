@@ -12,6 +12,7 @@ import '../widgets/download_widgets.dart';
 import '../widgets/layout.dart';
 import '../widgets/pressable.dart';
 import '../widgets/signin_banner.dart';
+import '../widgets/storage_banner.dart';
 import '../widgets/update_banner.dart';
 import 'app_nav.dart';
 import 'audio_stalled_strip.dart';
@@ -63,6 +64,7 @@ class _DesktopShellState extends State<DesktopShell> {
                   _Region(order: 2, child: DesktopTopBar()),
                   SignInAgainBanner(),
                   UpdateBanner(),
+                  StorageBanner(),
                   Expanded(child: _Content()),
                   _Banners(),
                 ],

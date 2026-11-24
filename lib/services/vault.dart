@@ -20,17 +20,17 @@ class Vault {
   static const int _providerNone = 0;
   static const int _providerAndroid = 1;
   static const int _providerWindows = 2;
-  static const int _giveUpAfter = 3;
-  static const int _giveUpAfterSlow = 12;
   static const Duration _callTimeout = Duration(seconds: 8);
   static const Set<String> _verdictCodes = {'key_missing', 'bad_blob', 'key_mismatch', 'dpapi'};
   static const int _backgroundFrom = 192 * 1024;
   static const int _wipeUpTo = 8 * 1024 * 1024;
+  static const String _recordLabel = 'xtify-records/v1';
   static final RegExp _safeName = RegExp(r'^[A-Za-z0-9._-]{1,120}$');
 
   VaultState _state = VaultState.starting;
   String _detail = '';
   String _kind = '';
+  bool _keyGone = false;
   Directory? _dir;
   VaultCrypto? _box;
   Future<void>? _ready;
@@ -40,12 +40,27 @@ class Vault {
 
   bool get canWrite => _state == VaultState.on || _state == VaultState.off;
 
+  // True when the vault is locked and the key storage said clearly that the
+  // saved key can never be opened again. Only then is startFresh offered.
+  bool get canStartFresh => _state == VaultState.locked && _keyGone;
+
   String get summary => switch (_state) {
         VaultState.on => 'on ($_kind)',
         VaultState.off => 'off ($_detail)',
         VaultState.locked => 'locked ($_detail)',
         VaultState.starting => 'starting',
       };
+
+  // For data that is written one line at a time and has to reach the disk at
+  // once, like the logs. The key is already in memory, so these never wait.
+  // sealRecord throws when the vault has no key, so check state == on first.
+  Uint8List sealRecord(Uint8List plain) {
+    final box = _box;
+    if (box == null) throw StateError('the vault has no key');
+    return box.seal(plain, _recordLabel);
+  }
+
+  Uint8List? openRecord(Uint8List sealed) => _box?.open(sealed, _recordLabel);
 
   Future<void> init() => _ready ??= _start();
 
@@ -67,8 +82,6 @@ class Vault {
 
   Future<void> _openKey(Directory dir) async {
     final keyFile = File(_join(dir, 'key.bin'));
-    final failFile = File(_join(dir, 'key.fail'));
-    final slowFile = File(_join(dir, 'key.slow'));
     final kind = await _providerKind();
     final provider = _providerId(kind);
     if (provider == _providerNone) {
@@ -82,20 +95,30 @@ class Vault {
       final result = await _unwrapStored(stored, provider);
       final master = result.key;
       if (master != null) {
-        await _remove(failFile);
-        await _remove(slowFile);
+        await _dropCounters(dir);
         await _adopt(dir, master);
         return;
       }
-      final failures = await _countFailure(result.clear ? failFile : slowFile);
-      final limit = result.clear ? _giveUpAfter : _giveUpAfterSlow;
-      if (failures < limit) {
+      if (await _hasData(dir)) {
+        // Nothing is moved, deleted or replaced here. The data opens again as
+        // soon as the key does, and only the user can decide to start over.
         _state = VaultState.locked;
-        _detail = 'could not unlock the saved key, attempt $failures of $limit: $_detail';
+        _keyGone = result.clear;
+        _detail = result.clear
+            ? 'the saved key can no longer be opened, nothing was changed: $_detail'
+            : 'the key storage did not answer, nothing was changed: $_detail';
         return;
       }
-      debugPrint('vault: the saved key stayed locked, starting a new vault');
-      await _setAside(dir);
+      // No encrypted data, only a key that no longer opens: there is nothing to
+      // lose. Only the key is set aside, plain data of an older run stays.
+      await _setAside(dir, keyOnly: true);
+    } else if (await _hasData(dir)) {
+      // Encrypted data but no key file. A new key would cut the data off for
+      // good, so nothing is created and the user decides.
+      _state = VaultState.locked;
+      _keyGone = true;
+      _detail = 'the saved key file is missing, nothing was changed';
+      return;
     }
     try {
       final master = VaultCrypto.randomBytes(VaultCrypto.keyLength);
@@ -183,24 +206,37 @@ class Vault {
     return (key: null, clear: false);
   }
 
-  Future<int> _countFailure(File file) async {
-    var count = 0;
-    try {
-      if (await file.exists()) count = int.tryParse((await file.readAsString()).trim()) ?? 0;
-    } catch (_) {}
-    count++;
-    try {
-      await file.writeAsString('$count', flush: true);
-    } catch (_) {}
-    return count;
+  // Version 3.5.0 counted failed starts in these two files. They are not used any more.
+  Future<void> _dropCounters(Directory dir) async {
+    for (final name in const ['key.fail', 'key.slow']) {
+      await _remove(File(_join(dir, name)));
+    }
   }
 
-  Future<void> _setAside(Directory dir) async {
+  // Only for a locked vault whose key is gone, and only after the user has
+  // confirmed. Nothing is deleted: every saved file moves into a lost-<time>
+  // folder, and the next start begins with a new key.
+  Future<bool> startFresh() async {
+    await init();
+    final dir = _dir;
+    if (dir == null || !canStartFresh) return false;
+    try {
+      await _setAside(dir);
+      _keyGone = false;
+      return true;
+    } catch (e) {
+      debugPrint('vault: could not start fresh: $e');
+      return false;
+    }
+  }
+
+  Future<void> _setAside(Directory dir, {bool keyOnly = false}) async {
     final lost = Directory(_join(dir, 'lost-${DateTime.now().millisecondsSinceEpoch}'));
     await lost.create(recursive: true);
     final files = await dir.list(followLinks: false).where((e) => e is File).toList();
     for (final file in files) {
       final name = file.uri.pathSegments.last;
+      if (keyOnly && !name.startsWith('key.')) continue;
       try {
         await file.rename(_join(lost, name));
       } catch (e) {

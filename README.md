@@ -97,10 +97,12 @@ Most songs play without it. YouTube sometimes refuses requests that don't look s
 
 Xtify has no account and no server of its own. What it knows about you stays on your device.
 
-- Your playlists, favourites, history, searches, settings and sign-in cookies are stored encrypted. The key is kept by the system: in the Android Keystore on Android, and tied to your Windows account on Windows. Other programs that open Xtify's files only see scrambled data.
+- Your playlists, favourites, history, searches, settings, sign-in cookies and the log of what the app did are stored encrypted. The key is kept by the system: in the Android Keystore on Android, and tied to your Windows account on Windows. Other programs that open Xtify's files only see scrambled data.
 - This protects the files from other programs and from anyone who copies them. It cannot stop malware that fully controls your device while you are signed in, because such malware can ask the system for the key in the same way Xtify does.
 - Downloaded songs and their cover art are normal audio and image files you can play anywhere, so they are not encrypted.
+- Lyrics are public text from lrclib. They are cached as plain files named after the song's ID, so they are not encrypted. The short crash note Android writes when the app crashes (the error and its stack) is plain text too.
 - Android's cloud backup is off for Xtify, so nothing from the app is uploaded to a backup.
+- If Xtify cannot unlock its saved data, it never deletes, resets or replaces anything by itself. It tells you, keeps everything untouched and tries again at the next start. Starting over is only offered when the system says the key is gone, and only after you confirm.
 
 ---
 
@@ -133,6 +135,7 @@ Xtify has no account and no server of its own. What it knows about you stays on 
 | Some songs failed to import | The report under *Library → Import a playlist* lists every failed song and why. Songs with no match on YouTube Music, and private or deleted videos, cannot be imported. |
 | A Spotify playlist stopped after about 100 songs | Spotify only shares about the first 100 songs of a playlist link. The report says how many were left out. |
 | Download fails | Check you're online and the download folder still exists. Downloading many songs quickly can get your IP temporarily flagged by YouTube. |
+| A "Saved data is locked" notice at the top, and playlists or history are missing | Nothing was deleted. Close Xtify and open it again, it tries again at every start. If the notice says the key is gone (after a Windows password reset or reinstall, a reset of the phone's key storage, or when Xtify was opened as a different Windows user), tap *Details → Start fresh* to begin with an empty library. The old files are kept in a separate folder. |
 | Something else is broken | Library → bug icon → *Copy debug info*, and send it with your report. |
 
 ---

@@ -36,6 +36,7 @@ import 'package:xtify_app/services/vault.dart';
 import 'package:xtify_app/theme/app_theme.dart';
 import 'package:xtify_app/widgets/player_sheet.dart';
 import 'package:xtify_app/widgets/signin_banner.dart';
+import 'package:xtify_app/widgets/storage_banner.dart';
 import 'package:xtify_app/widgets/update_banner.dart';
 
 Future<void> main() async {
@@ -283,6 +284,7 @@ class _MobileHomeState extends State<_MobileHome>
                 children: [
                   const SignInAgainBanner(),
                   const UpdateBanner(),
+                  const StorageBanner(),
                   Expanded(
                     child: FadeTransition(
                       opacity: _fade,

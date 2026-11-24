@@ -2,6 +2,21 @@
 All notable changes to **Xtify** are recorded here, newest first.
 ---
 
+## 3.5.1 - 2026-11-23
+
+**Security** - The saved log is encrypted, and Xtify never sets your data aside on its own
+
+- The log Xtify keeps on the device shows what happens inside the app: songs played, searches, errors. It is now stored encrypted with the same key as the rest of your data, so a program that reads Xtify's files finds nothing readable in it.
+- Every line is encrypted and written the moment it is logged, so a crash still leaves the last lines behind, as before. A line that a crash cut in half is left out when the log is read.
+- Logs from older versions are converted by themselves the first time the new version starts. The plain copy is wiped once the encrypted one is in place.
+- Each encrypted line carries a small seal, so a log now grows to 256 KB (it was 160 KB) before its oldest lines are trimmed, which keeps about the same amount of text. The last 6 runs are kept, about 1.5 MB at most in total.
+- When the secure storage is locked, the log of that run is kept in memory only and is never written as plain text. If encryption is off on a device, the log is saved as plain text like before. The copy debug info button says which one applies on the new "Saved logs" line.
+- Copying the debug info now reads only the newest part of each saved log, so it stays quick.
+- The short note Android's crash recorder writes when the app crashes (the error and its stack) is still plain text.
+- Xtify no longer starts over by itself when it cannot open its key. In 3.5.0, after three starts in a row where the key storage said the saved key could not be opened (twelve where it did not answer), Xtify moved the saved data aside and began empty. A temporary glitch, or opening the app once as a different Windows user, could have triggered that. Now nothing is moved, deleted or replaced, and the data opens again as soon as the key does.
+- When the saved data cannot be opened, a notice at the top says so ("Saved data is locked. Nothing was deleted") and explains why. Only when the key storage says clearly that the key is gone does the notice offer Start fresh. After you confirm, it moves the old files into a separate folder (they are not deleted) and Xtify starts with an empty library at the next launch. Nothing is ever reset without that confirmation.
+- A key file that is missing while encrypted data exists is handled the same way, instead of creating a new key that would cut the data off.
+
 ## 3.5.0 - 2026-11-22
 
 **Security** - Saved data is now encrypted

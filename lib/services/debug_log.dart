@@ -22,6 +22,8 @@ class DebugLog {
   static const int _recordsLimit = 12000;
   static final Queue<String> _lines = Queue<String>();
   static LogStore? _store;
+  static Directory? _directory;
+  static String _saving = 'starting';
   static String _version = '?';
   static String? _last;
   static int _repeats = 0;
@@ -29,8 +31,24 @@ class DebugLog {
   static Future<void> startSaving() async {
     try {
       _version = await _readVersion();
+      final vault = Vault.instance;
+      await vault.init();
       final base = await getApplicationSupportDirectory();
-      final store = LogStore(Directory('${base.path}${Platform.pathSeparator}logs'));
+      final directory = Directory('${base.path}${Platform.pathSeparator}logs');
+      _directory = directory;
+      WidgetsBinding.instance.addObserver(_Watcher());
+      final state = vault.state;
+      if (state != VaultState.on && state != VaultState.off) {
+        _saving = 'not saved to disk, secure storage is ${vault.summary}';
+        add('log: not saved to disk this time, secure storage is ${vault.summary}');
+        return;
+      }
+      final sealed = state == VaultState.on;
+      final store = LogStore(
+        directory,
+        seal: sealed ? vault.sealRecord : null,
+        unseal: sealed ? vault.openRecord : null,
+      );
       final system = '${Platform.operatingSystem} ${Platform.operatingSystemVersion}'
           .replaceAll(RegExp(r'\s+'), ' ');
       store.open('Xtify $_version | $system | pid $pid | '
@@ -39,9 +57,11 @@ class DebugLog {
         store.add(line);
       }
       _store = store;
-      WidgetsBinding.instance.addObserver(_Watcher());
-      add('log: saved on this device, session ${store.number}');
+      _saving = sealed ? 'encrypted' : 'plain text, secure storage is off';
+      add('log: saved on this device${sealed ? ', encrypted' : ''}, session ${store.number}');
+      if (sealed) store.encryptOld();
     } catch (e) {
+      _saving = 'not saved to disk: $e';
       debugPrint('log: could not save to disk: $e');
     }
   }
@@ -183,6 +203,7 @@ class DebugLog {
       ..writeln('App: $_version')
       ..writeln('Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
       ..writeln('Encrypted storage: ${Vault.instance.summary}')
+      ..writeln('Saved logs: $_saving')
       ..writeln('Online: ${ConnectivityService.instance.online.value}')
       ..writeln('Signed in to YouTube: ${CookieService.instance.signedInListener.value}'
           '${CookieService.instance.needsSignInListener.value ? ' (expired)' : ''}')
@@ -199,9 +220,9 @@ class DebugLog {
   static Future<void> copy() => Clipboard.setData(ClipboardData(text: report()));
 
   static void _writeRecords(StringBuffer b) {
-    final store = _store;
-    if (store == null) return;
-    final text = AndroidRecords.read(store.directory, _recordsLimit);
+    final directory = _directory;
+    if (directory == null) return;
+    final text = AndroidRecords.read(directory, _recordsLimit);
     if (text.isEmpty) return;
     b
       ..writeln('--- Android records ---')
@@ -212,7 +233,9 @@ class DebugLog {
   static void _writeLogs(StringBuffer b) {
     flush();
     final store = _store;
-    final sessions = store == null ? const <LogSession>[] : store.sessions();
+    final sessions = store == null
+        ? const <LogSession>[]
+        : store.sessions(last: _budgets.length, tail: _budgets.first);
     if (store == null || sessions.isEmpty) {
       b.writeln('--- last log lines ---');
       for (final line in _lines) {
@@ -230,15 +253,15 @@ class DebugLog {
           : rank <= 1
               ? 'previous session'
               : 'earlier session';
-      sections.add(_section(label, s.text, _budgets[rank]));
+      sections.add(_section(label, s, _budgets[rank]));
     }
     for (final section in sections.reversed) {
       b.write(section);
     }
   }
 
-  static String _section(String label, String text, int budget) {
-    final lines = const LineSplitter().convert(text);
+  static String _section(String label, LogSession session, int budget) {
+    final lines = const LineSplitter().convert(session.text);
     final first = lines.isNotEmpty && lines.first.startsWith('=== ') ? 1 : 0;
     var start = lines.length;
     var used = 0;
@@ -248,9 +271,10 @@ class DebugLog {
       used += cost;
       start--;
     }
+    final left = (start - first) + session.skipped;
     final out = StringBuffer()..writeln('--- $label ---');
     if (first == 1) out.writeln(lines.first);
-    if (start > first) out.writeln('(${start - first} earlier lines left out)');
+    if (left > 0) out.writeln('($left earlier lines left out)');
     for (var i = start; i < lines.length; i++) {
       out.writeln(lines[i]);
     }

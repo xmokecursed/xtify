@@ -94,7 +94,7 @@ class LyricsService {
   static const String _cacheName = 'lyrics';
   static const String _savedName = 'lyrics_saved';
   static const String _agent =
-      'Xtify/3.5.0 (https://github.com/xmokecursed/xtify)';
+      'Xtify/3.5.1 (https://github.com/xmokecursed/xtify)';
   static const int _memoryCap = 40;
   static const int _diskCap = 1000;
   static const int _toleranceSeconds = 8;
