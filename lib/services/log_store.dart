@@ -71,8 +71,29 @@ class LogStore {
 
   bool get encrypted => seal != null;
 
+  // After going back to 3.5.0 and forward again, a plain log can carry the
+  // number of an encrypted one. It moves to a number of its own, so that
+  // encryptOld converts it like any other old log instead of treating it as a
+  // duplicate to wipe.
+  void _renumberClashes() {
+    try {
+      final all = _all();
+      final taken = <int>{
+        for (final entry in all)
+          if (entry.sealed) entry.number,
+      };
+      var top = all.isEmpty ? 0 : all.last.number;
+      for (final entry in all) {
+        if (entry.sealed || !taken.contains(entry.number)) continue;
+        top++;
+        entry.file.renameSync('${directory.path}${Platform.pathSeparator}session-$top.log');
+      }
+    } catch (_) {}
+  }
+
   void open(String info) {
     directory.createSync(recursive: true);
+    if (encrypted) _renumberClashes();
     final all = _all();
     final numbers = <int>[];
     for (final entry in all) {

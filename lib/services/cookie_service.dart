@@ -35,6 +35,7 @@ class CookieService {
 
   static const String _signedInKey = 'yt_signed_in';
   static const String _jarName = 'yt-cookies';
+  static const String _olderJarName = 'yt-cookies-older';
   static const String _legacyFileName = 'youtube_cookies.txt';
   static const String _loanFolder = 'ytdlp-cookies';
   static const Set<String> _authNames = {
@@ -168,22 +169,33 @@ class CookieService {
 
   Future<void> _moveLegacyFile() async {
     try {
-      final legacy = await _legacyFile();
-      if (legacy == null) {
-        await _removeLegacyFiles();
-        return;
+      final dir = await getApplicationSupportDirectory();
+      // The file an older version writes, and the one it writes first and then
+      // renames. A crash can leave only the second one behind, and it can hold
+      // the newest sign-in, so it is looked at like the first one.
+      final present = <File>[];
+      for (final name in const [_legacyFileName, '$_legacyFileName.tmp']) {
+        final file = File('${dir.path}${Platform.pathSeparator}$name');
+        if (await file.exists()) present.add(file);
       }
+      if (present.isEmpty) return;
       final vault = Vault.instance;
       await vault.init();
       if (!vault.canWrite) return;
-      var stored = await vault.readText(_jarName);
-      if (stored == null || stored.trim().isEmpty) {
-        final text = await legacy.readAsString();
-        if (text.trim().isNotEmpty) {
-          if (!await vault.writeText(_jarName, text)) return;
-          stored = await vault.readText(_jarName);
-          if (stored == null || stored != text) return;
-        }
+      for (final file in present) {
+        final text = await file.readAsString();
+        final stored = await vault.readText(_jarName) ?? '';
+        final hasStored = stored.trim().isNotEmpty;
+        // A plain file at this point was written by an older version, after the
+        // saved copy was made, so a sign-in in it is the newer one. The copy it
+        // replaces is kept aside until the next sign-in or sign-out.
+        final take = text.trim().isNotEmpty &&
+            (!hasStored ||
+                (_hasAuthLine(text) && !setEquals(_dataLines(text), _dataLines(stored))));
+        if (!take) continue;
+        if (hasStored && !await vault.writeText(_olderJarName, stored)) return;
+        if (!await vault.writeText(_jarName, text)) return;
+        if (await vault.readText(_jarName) != text) return;
       }
       await _removeLegacyFiles();
       debugPrint('The saved sign-in cookies are now stored encrypted');
@@ -270,6 +282,7 @@ class CookieService {
         throw Exception('The cookies could not be saved securely on this device');
       }
       await _removeLegacyFiles();
+      await Vault.instance.delete(_olderJarName);
 
       final signedIn = _hasAuth(allCookies);
       _signedInNotifier.value = signedIn;
@@ -323,6 +336,7 @@ class CookieService {
   Future<void> signOut() async {
     try {
       await Vault.instance.delete(_jarName);
+      await Vault.instance.delete(_olderJarName);
       await _removeLegacyFiles();
 
       await CookieManager.instance().deleteCookies(

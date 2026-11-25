@@ -107,6 +107,18 @@ class VaultCrypto {
     return _sealWith(randomBytes(_nonceLength), plain, label);
   }
 
+  // A blob that starts with "XV" but is not version 1 was written by another
+  // version of Xtify. It is not damaged, so it must never be renamed, replaced
+  // or deleted, only left alone until a version that knows the format runs.
+  static bool isOtherVersion(Uint8List blob) {
+    if (blob.length < _headLength) return false;
+    if (blob[0] != _magic[0] || blob[1] != _magic[1]) return false;
+    for (var i = 2; i < _headLength; i++) {
+      if (blob[i] != _magic[i]) return true;
+    }
+    return false;
+  }
+
   Uint8List? open(Uint8List blob, String label) {
     if (blob.length < overhead) return null;
     for (var i = 0; i < _headLength; i++) {

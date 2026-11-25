@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../models/track_model.dart';
 import 'audio_url_resolver.dart';
+import 'data_merge.dart';
 import 'lyrics_service.dart';
 import 'playlist_service.dart';
 import 'secure_prefs.dart';
@@ -103,6 +104,10 @@ class DownloadService {
   late Directory _support;
   bool _started = false;
   String? _custom;
+
+  // Saved entries whose file is not there right now. They are not shown, but
+  // they stay in the saved list so a drive that comes back brings them back.
+  List<Map<String, dynamic>> _kept = <Map<String, dynamic>>[];
   final List<String> _queue = [];
   final Set<String> _cancelled = {};
   bool _working = false;
@@ -111,30 +116,53 @@ class DownloadService {
 
   Future<void> init() async {
     _support = await getApplicationSupportDirectory();
-    _started = true;
     try {
       final prefs = await SecurePrefs.getInstance();
       final c = prefs.getString(_dirKey);
       _custom = (c == null || c.isEmpty) ? null : c;
     } catch (_) {}
     String? text;
+    var readable = true;
     try {
       final old = File('${_support.path}${Platform.pathSeparator}downloads.json');
-      text = await Vault.instance.readTextOrMove(_vaultName, old, isValid: Vault.isJsonList);
-      if (text != null) {
-        final out = <String, DownloadedItem>{};
-        for (final e in json.decode(text) as List<dynamic>) {
-          final it = DownloadedItem.fromJson(e as Map<String, dynamic>);
-          if (it != null && File(it.path).existsSync()) out[it.track.id] = it;
-        }
-        items.value = out;
-      }
+      text = await Vault.instance.readTextOrMove(
+        _vaultName,
+        old,
+        isValid: Vault.isJsonList,
+        merge: DataMerge.downloads,
+      );
     } catch (e) {
-      debugPrint('downloads load failed: $e');
-      if (text != null) {
-        await Vault.instance.writeText('$_vaultName-unreadable', text);
+      // Not knowing what is saved is not the same as nothing being saved, so
+      // nothing is saved over it.
+      debugPrint('downloads could not be fetched: $e');
+      readable = false;
+      Vault.instance.noteUnreadable('list of downloads');
+    }
+    if (text != null) {
+      try {
+        final out = <String, DownloadedItem>{};
+        final kept = <Map<String, dynamic>>[];
+        for (final e in json.decode(text) as List<dynamic>) {
+          final entry = e as Map<String, dynamic>;
+          final it = DownloadedItem.fromJson(entry);
+          if (it != null && File(it.path).existsSync()) {
+            out[it.track.id] = it;
+          } else {
+            // The file may only be out of reach for now (a memory card or a
+            // drive that is not connected), so the entry stays in the saved
+            // list and comes back by itself when the file does.
+            kept.add(entry);
+          }
+        }
+        _kept = kept;
+        items.value = out;
+      } catch (e) {
+        debugPrint('downloads load failed: $e');
+        readable = false;
+        Vault.instance.noteUnreadable('list of downloads');
       }
     }
+    _started = readable;
     _publishFolder();
     _reindexCovers();
     items.addListener(_reindexCovers);
@@ -161,12 +189,22 @@ class DownloadService {
   }
 
   Future<void> _syncPlaylist() async {
+    // With a list of downloads that could not be read nothing is known about
+    // what is downloaded, so the playlist is left as it is.
+    if (!_started) return;
     final ps = PlaylistService.instance;
     final pl = ps.byId(PlaylistService.downloadsId);
     if (pl == null) return;
     final have = pl.tracks.map((t) => t.id).toSet();
+    // A song whose file is only out of reach for now stays in the playlist.
+    final away = <String>{
+      for (final m in _kept)
+        if (_idOf(m) != null) _idOf(m)!,
+    };
     for (final id in have) {
-      if (!items.value.containsKey(id)) await ps.removeTrack(PlaylistService.downloadsId, id);
+      if (!items.value.containsKey(id) && !away.contains(id)) {
+        await ps.removeTrack(PlaylistService.downloadsId, id);
+      }
     }
     final sorted = items.value.values.toList()..sort((a, b) => a.atMs.compareTo(b.atMs));
     for (final it in sorted) {
@@ -278,12 +316,21 @@ class DownloadService {
     try {
       final saved = await Vault.instance.writeText(
         _vaultName,
-        json.encode(items.value.values.map((e) => e.toJson()).toList()),
+        json.encode([
+          for (final e in items.value.values) e.toJson(),
+          for (final m in _kept)
+            if (!items.value.containsKey(_idOf(m))) m,
+        ]),
       );
       if (!saved) debugPrint('downloads save failed: the secure store is not available');
     } catch (e) {
       debugPrint('downloads save failed: $e');
     }
+  }
+
+  static String? _idOf(Map<String, dynamic> entry) {
+    final track = entry['track'];
+    return track is Map && track['id'] != null ? '${track['id']}' : null;
   }
 
   Future<void> _pump() async {

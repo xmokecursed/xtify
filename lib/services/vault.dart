@@ -35,6 +35,17 @@ class Vault {
   VaultCrypto? _box;
   Future<void>? _ready;
   final Map<String, Future<void>> _tails = <String, Future<void>>{};
+  final Map<String, String> _notes = <String, String>{};
+  final Set<String> _newer = <String>{};
+  final Set<String> _blocked = <String>{};
+  final Set<String> _verified = <String>{};
+  bool _startedFresh = false;
+
+  // Things the user should know about. The notice at the top of the app shows them.
+  final ValueNotifier<List<String>> notices = ValueNotifier<List<String>>(const <String>[]);
+
+  // The saved items that a newer version of Xtify wrote. They are left as they are.
+  List<String> get newerItems => List<String>.unmodifiable(_newer);
 
   VaultState get state => _state;
 
@@ -43,6 +54,14 @@ class Vault {
   // True when the vault is locked and the key storage said clearly that the
   // saved key can never be opened again. Only then is startFresh offered.
   bool get canStartFresh => _state == VaultState.locked && _keyGone;
+
+  // True after startFresh moved the old files aside. The new key is made the
+  // next time Xtify starts, so until then nothing can be saved.
+  bool get startedFresh => _startedFresh;
+
+  // A saved item that this run must not change: a newer version wrote it, or
+  // it could not be read, so what the app holds in memory may not be all of it.
+  bool _refuses(String name) => _newer.contains(name) || _blocked.contains(name);
 
   String get summary => switch (_state) {
         VaultState.on => 'on ($_kind)',
@@ -91,7 +110,7 @@ class Vault {
     }
     _kind = kind;
     if (await keyFile.exists()) {
-      final stored = await keyFile.readAsBytes();
+      final stored = await _readBytes(keyFile);
       final result = await _unwrapStored(stored, provider);
       final master = result.key;
       if (master != null) {
@@ -106,11 +125,20 @@ class Vault {
         _keyGone = result.clear;
         _detail = result.clear
             ? 'the saved key can no longer be opened, nothing was changed: $_detail'
-            : 'the key storage did not answer, nothing was changed: $_detail';
+            : 'the saved key could not be opened this time, nothing was changed: $_detail';
         return;
       }
-      // No encrypted data, only a key that no longer opens: there is nothing to
-      // lose. Only the key is set aside, plain data of an older run stays.
+      if (!result.clear) {
+        // There is no encrypted data yet, but the key may open again (the key
+        // storage was busy, or another version of Xtify wrote the key). It
+        // stays where it is and this run keeps its data in plain files, which
+        // the next run takes over once the key opens.
+        _state = VaultState.off;
+        _detail = 'the saved key could not be opened this time, it was kept: $_detail';
+        return;
+      }
+      // No encrypted data, only a key that can never be opened again: there is
+      // nothing to lose. Only the key is set aside, plain data of an older run stays.
       await _setAside(dir, keyOnly: true);
     } else if (await _hasData(dir)) {
       // Encrypted data but no key file. A new key would cut the data off for
@@ -176,12 +204,18 @@ class Vault {
   // damaged). Anything else, like a busy key storage or no answer in time, may
   // pass by itself and is retried at the next start.
   Future<({Uint8List? key, bool clear})> _unwrapStored(Uint8List stored, int provider) async {
-    final head = stored.length >= 5 &&
-        stored[0] == _keyMagic[0] &&
-        stored[1] == _keyMagic[1] &&
-        stored[2] == _keyMagic[2] &&
-        stored[3] == provider;
-    if (!head) {
+    // A key file of another version or another key storage is not damaged, so
+    // it never counts as a clear verdict and Start fresh is not offered for it.
+    final ours = stored.length >= 4 && stored[0] == _keyMagic[0] && stored[1] == _keyMagic[1];
+    if (ours && stored[2] != _keyMagic[2]) {
+      _detail = 'the saved key was written by a newer version of Xtify';
+      return (key: null, clear: false);
+    }
+    if (ours && stored[3] != provider) {
+      _detail = 'the saved key belongs to a different key storage';
+      return (key: null, clear: false);
+    }
+    if (!ours || stored.length < 5) {
       _detail = 'the saved key is not readable';
       return (key: null, clear: true);
     }
@@ -223,6 +257,7 @@ class Vault {
     try {
       await _setAside(dir);
       _keyGone = false;
+      _startedFresh = true;
       return true;
     } catch (e) {
       debugPrint('vault: could not start fresh: $e');
@@ -245,12 +280,16 @@ class Vault {
     }
   }
 
+  // When the folder cannot be listed, it is not known that nothing is in it, so
+  // this says yes: a folder that might hold data is never treated as empty.
   Future<bool> _hasData(Directory dir) async {
     try {
       await for (final entity in dir.list(followLinks: false)) {
-        if (entity is File && entity.path.contains('.xv')) return true;
+        if (entity is File && entity.uri.pathSegments.last.contains('.xv')) return true;
       }
-    } catch (_) {}
+    } catch (_) {
+      return true;
+    }
     return false;
   }
 
@@ -282,6 +321,7 @@ class Vault {
     final dir = _dir;
     if (dir == null || !canWrite) return false;
     _check(name);
+    if (_refuses(name)) return false;
     return _queue<bool>(
       name,
       () => _store(dir, name, bytes, backup: backup, durable: durable),
@@ -314,7 +354,16 @@ class Vault {
     final dir = _dir;
     if (dir == null || !canWrite) return;
     _check(name);
+    if (_refuses(name)) return;
     await _queue<void>(name, () async {
+      // An item this run has not read could have been written by a newer
+      // version, and that one is never deleted.
+      if (_box != null &&
+          !_verified.contains(name) &&
+          await _holdsOtherVersion(File(_join(dir, '$name.xv')))) {
+        _keepNewer(name);
+        return;
+      }
       for (final tail in const ['', '.tmp', '.bak', '.broken']) {
         await _remove(File(_join(dir, '$name.xv$tail')));
         await wipe(File(_join(dir, '$name.xp$tail')));
@@ -343,40 +392,80 @@ class Vault {
     return found.toList();
   }
 
+  // Reads a saved item. [legacy] is the plain file that older versions of
+  // Xtify kept in its place. It is never just deleted: when the item does not
+  // exist yet the plain file becomes the item, and when it does (an older
+  // version was used after an update, then the new one again) [merge] joins
+  // the two so the changes of both survive. A copy that cannot be merged is
+  // kept under a name of its own before the plain file is wiped.
   Future<String?> readTextOrMove(
     String name,
     File legacy, {
     bool Function(String text)? isValid,
+    String Function(String current, String older)? merge,
   }) async {
-    final stored = await readText(name);
-    if (stored != null) {
-      await _dropLegacy(legacy);
-      return stored;
-    }
-    if (!await legacy.exists()) return null;
-    final bytes = await legacy.readAsBytes();
-    String text;
-    try {
-      text = utf8.decode(bytes);
-    } catch (_) {
-      if (canWrite && await write('$name-unreadable', bytes)) await _dropLegacy(legacy);
-      return null;
-    }
-    final valid = isValid == null || isValid(text);
-    if (!canWrite) return valid ? text : null;
-    if (!valid) {
-      if (await writeText('$name-unreadable', text)) await _dropLegacy(legacy);
-      return null;
-    }
-    if (await writeText(name, text) && await readText(name) == text) {
-      await _dropLegacy(legacy);
+    var text = await readText(name);
+    for (final file in [legacy, File('${legacy.path}.tmp')]) {
+      try {
+        if (!await file.exists()) continue;
+        text = await _takeOlder(name, file, text, isValid, merge);
+      } catch (e) {
+        // The plain file stays where it is and is taken over at the next start.
+        debugPrint('vault: could not take over ${file.uri.pathSegments.last}: $e');
+      }
     }
     return text;
   }
 
-  Future<void> _dropLegacy(File legacy) async {
-    await wipe(legacy);
-    await wipe(File('${legacy.path}.tmp'));
+  Future<String?> _takeOlder(
+    String name,
+    File file,
+    String? current,
+    bool Function(String text)? isValid,
+    String Function(String current, String older)? merge,
+  ) async {
+    final bytes = await _readBytes(file);
+    String text;
+    try {
+      text = utf8.decode(bytes);
+    } catch (_) {
+      if (canWrite && await write(_sideName(name, 'unreadable', bytes), bytes)) {
+        await wipe(file);
+      }
+      return current;
+    }
+    final valid = isValid == null || isValid(text);
+    if (!canWrite) return current ?? (valid ? text : null);
+    if (!valid) {
+      if (await write(_sideName(name, 'unreadable', bytes), bytes)) await wipe(file);
+      return current;
+    }
+    if (current == null) {
+      if (await writeText(name, text) && await readText(name) == text) await wipe(file);
+      return text;
+    }
+    if (current == text) {
+      await wipe(file);
+      return current;
+    }
+    String? merged;
+    if (merge != null) {
+      try {
+        merged = merge(current, text);
+      } catch (e) {
+        debugPrint('vault: could not merge the older copy of $name: $e');
+      }
+    }
+    if (merged == null) {
+      if (await write(_sideName(name, 'older', bytes), bytes)) await wipe(file);
+      return current;
+    }
+    if (merged == current) {
+      await wipe(file);
+      return current;
+    }
+    if (await writeText(name, merged) && await readText(name) == merged) await wipe(file);
+    return merged;
   }
 
   static bool isJsonList(String text) {
@@ -406,15 +495,25 @@ class Vault {
       final main = File(_join(dir, '$name.$ext'));
       final present = await main.exists();
       if (present) {
-        final value = await _decode(await main.readAsBytes(), name);
-        if (value != null) return value;
+        final raw = await _readBytes(main);
+        if (_box != null && VaultCrypto.isOtherVersion(raw)) {
+          // Not damaged, just written by a newer Xtify. Nothing is renamed or
+          // replaced, and no older copy is shown in its place.
+          _keepNewer(name);
+          return null;
+        }
+        final value = await _decode(raw, name);
+        if (value != null) {
+          _verified.add(name);
+          return value;
+        }
         await _setBroken(main);
       }
       final spare = _box != null ? ['$name.$ext.tmp', '$name.$ext.bak'] : ['$name.$ext.bak'];
       for (final file in spare) {
         final copy = File(_join(dir, file));
         if (!await copy.exists()) continue;
-        final value = await _decode(await copy.readAsBytes(), name);
+        final value = await _decode(await _readBytes(copy), name);
         if (value == null) continue;
         await _queue<bool>(
           name,
@@ -424,15 +523,51 @@ class Vault {
       }
       if (_box != null) return await _adoptPlain(dir, name);
     } catch (e) {
-      debugPrint('vault: could not read $name: $e');
+      // Something is there but it could not be read. Treating that as nothing
+      // saved would let the next save replace the real data with an empty
+      // list, so this item is left alone until the next start.
+      _hold(name, e);
     }
     return null;
+  }
+
+  void _hold(String name, Object error) {
+    debugPrint('vault: could not read $name: $error');
+    if (!_blocked.add(name)) return;
+    _note(
+      'blocked:$name',
+      'Xtify could not read your ${_label(name)} this time. It is left as it is and '
+      'changes to it are not saved. Close Xtify and open it again to retry. '
+      'Nothing was deleted.',
+    );
+  }
+
+  // A read can fail for a moment, for example while a virus scanner has the file open.
+  static Future<Uint8List> _readBytes(File file) async {
+    for (var attempt = 0;; attempt++) {
+      try {
+        return await file.readAsBytes();
+      } on FileSystemException {
+        if (attempt >= 2) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 150 * (attempt + 1)));
+      }
+    }
+  }
+
+  // The name of a side copy. It comes from the content, so the same copy is
+  // never saved twice and a different one never replaces it.
+  static String _sideName(String name, String kind, Uint8List bytes) {
+    var hash = 0x811C9DC5;
+    for (final b in bytes) {
+      hash = ((hash ^ b) * 0x01000193) & 0xFFFFFFFF;
+    }
+    return '$name-$kind-${bytes.length}-${hash.toRadixString(16).padLeft(8, '0')}';
   }
 
   Future<Uint8List?> _adoptPlain(Directory dir, String name) async {
     final plain = File(_join(dir, '$name.xp'));
     if (!await plain.exists()) return null;
-    final bytes = await plain.readAsBytes();
+    final bytes = await _readBytes(plain);
     final saved = await _queue<bool>(
       name,
       () => _store(dir, name, bytes, backup: false, durable: true),
@@ -487,10 +622,15 @@ class Vault {
     required bool durable,
   }) async {
     try {
+      if (_blocked.contains(name)) return false;
       final box = _box;
       final ext = box != null ? 'xv' : 'xp';
       final main = File(_join(dir, '$name.$ext'));
       final tmp = File(_join(dir, '$name.$ext.tmp'));
+      if (box != null && !_verified.contains(name) && await _holdsOtherVersion(main)) {
+        _keepNewer(name);
+        return false;
+      }
       await tmp.writeAsBytes(box != null ? await _sealPlain(box, bytes, name) : bytes,
           flush: durable);
       if (box != null && durable) {
@@ -506,9 +646,83 @@ class Vault {
         } catch (_) {}
       }
       await tmp.rename(main.path);
+      _verified.add(name);
       return true;
     } catch (e) {
       debugPrint('vault: could not save $name: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> _holdsOtherVersion(File file) async {
+    try {
+      if (!await file.exists()) return false;
+      final reader = await file.open();
+      try {
+        return VaultCrypto.isOtherVersion(await reader.read(4));
+      } finally {
+        await reader.close();
+      }
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _keepNewer(String name) {
+    if (!_newer.add(name)) return;
+    _note(
+      'newer:$name',
+      'Saved data (${_label(name)}) was written by a newer version of Xtify. '
+      'It is left as it is, and changes to it are not saved until you update.',
+    );
+  }
+
+  // For a store that could not make sense of what it read. The saved data is left as it is.
+  void noteUnreadable(String what) => _note(
+        'unreadable:$what',
+        'Xtify could not read your $what. The saved data is left as it is and '
+        'changes are not saved. Nothing was deleted.',
+      );
+
+  void _note(String key, String text) {
+    if (_notes[key] == text) return;
+    _notes[key] = text;
+    notices.value = List<String>.unmodifiable(_notes.values);
+  }
+
+  static String _label(String name) {
+    if (name.startsWith('p.')) return 'settings and history';
+    return switch (name) {
+      'playlists' => 'playlists',
+      'downloads' => 'downloads list',
+      'import-reports' => 'import reports',
+      'yt-cookies' => 'YouTube sign-in',
+      _ => name,
+    };
+  }
+
+  // Only after the user has confirmed. Moves what a newer version of Xtify
+  // wrote into a lost-<time> folder (nothing is deleted) so that this version
+  // can save its own data in its place.
+  Future<bool> setAsideNewer() async {
+    final dir = _dir;
+    if (dir == null || _newer.isEmpty) return false;
+    try {
+      final lost = Directory(_join(dir, 'lost-${DateTime.now().millisecondsSinceEpoch}'));
+      await lost.create(recursive: true);
+      for (final name in _newer.toList()) {
+        for (final tail in const ['', '.tmp', '.bak', '.broken']) {
+          final file = File(_join(dir, '$name.xv$tail'));
+          if (await file.exists()) await file.rename(_join(lost, '$name.xv$tail'));
+        }
+        _newer.remove(name);
+        _verified.remove(name);
+        _notes.remove('newer:$name');
+      }
+      notices.value = List<String>.unmodifiable(_notes.values);
+      return true;
+    } catch (e) {
+      debugPrint('vault: could not set the newer data aside: $e');
       return false;
     }
   }

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/playlist_model.dart';
 import '../models/track_model.dart';
+import 'data_merge.dart';
 import 'vault.dart';
 
 class PlaylistService {
@@ -18,24 +19,39 @@ class PlaylistService {
   bool _started = false;
 
   Future<void> init() async {
-    _started = true;
     String? text;
+    var readable = true;
     try {
       final dir = await getApplicationSupportDirectory();
       final old = File('${dir.path}${Platform.pathSeparator}playlists.json');
-      text = await Vault.instance.readTextOrMove(_vaultName, old, isValid: Vault.isJsonList);
-      if (text != null) {
+      text = await Vault.instance.readTextOrMove(
+        _vaultName,
+        old,
+        isValid: Vault.isJsonList,
+        merge: DataMerge.playlists,
+      );
+    } catch (e) {
+      // Not knowing what is saved is not the same as nothing being saved, so
+      // nothing is saved over it.
+      debugPrint('playlists could not be fetched: $e');
+      readable = false;
+      Vault.instance.noteUnreadable('playlists');
+    }
+    if (text != null) {
+      try {
         final data = json.decode(text) as List<dynamic>;
         playlists.value = data
             .map((e) => Playlist.fromJson(e as Map<String, dynamic>))
             .toList();
-      }
-    } catch (e) {
-      debugPrint('playlists load failed: $e');
-      if (text != null) {
-        await Vault.instance.writeText('$_vaultName-unreadable', text);
+      } catch (e) {
+        // Saved data that cannot be read is never saved over. A version that
+        // understands it finds it exactly as it was.
+        debugPrint('playlists load failed: $e');
+        readable = false;
+        Vault.instance.noteUnreadable('playlists');
       }
     }
+    _started = readable;
     await _ensureFavourites();
   }
 

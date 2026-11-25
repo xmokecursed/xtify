@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'data_merge.dart';
 import 'vault.dart';
 
 class SecurePrefs {
@@ -65,34 +66,58 @@ class SecurePrefs {
     return prefs;
   }
 
+  // Settings and history that an older version of Xtify kept in the plain
+  // settings store. The first time they are moved here. After that, anything
+  // found there was written later by an older version (after going back to
+  // it), so it is joined with what is saved here instead of being left behind
+  // or thrown away. Each plain copy is removed as soon as its joined value is
+  // saved, so a key that cannot be saved right now never makes the others be
+  // joined a second time at the next start (that would count plays twice).
   Future<void> _moveOldValues() async {
     final vault = Vault.instance;
     if (!vault.canWrite) return;
-    if (await vault.exists(_doneName)) return;
+    final movedBefore = await vault.exists(_doneName);
     final old = await SharedPreferences.getInstance();
     var complete = true;
-    final moved = <String>[];
     for (final key in _oldKeys) {
       final value = old.get(key);
       if (value == null) continue;
-      if (!_values.containsKey(key)) {
-        if (!await _save(key, value)) {
+      final have = _values[key];
+      final next = have == null ? value : _join(key, have, value, newer: movedBefore);
+      if (!_same(next, have)) {
+        if (!await _save(key, next)) {
+          // It stays where it is and is tried again at the next start.
           complete = false;
           continue;
         }
-        _values[key] = value;
+        _values[key] = next;
       }
-      moved.add(key);
-    }
-    if (!complete) return;
-    for (final key in moved) {
       await old.remove(key);
     }
+    if (!complete) return;
     for (final key in _staleKeys) {
       if (old.containsKey(key)) await old.remove(key);
     }
-    await vault.writeText(_doneName, '1');
+    if (!movedBefore) await vault.writeText(_doneName, '1');
   }
+
+  // [have] is what is saved, [older] what an older version left in the plain
+  // store. Lists are joined. Any other value is a single choice, and the older
+  // one was set last, except during the very first move, where what is saved
+  // is kept.
+  static Object _join(String key, Object have, Object older, {required bool newer}) {
+    if (have is List && older is List) {
+      final a = [for (final e in have) '$e'];
+      final b = [for (final e in older) '$e'];
+      if (key == 'play_history') return DataMerge.history(a, b);
+      if (key == 'artist_stats') return DataMerge.artistStats(a, b);
+      if (key == 'search_history') return DataMerge.queries(a, b);
+    }
+    return newer ? older : have;
+  }
+
+  static bool _same(Object? a, Object? b) =>
+      a != null && b != null && jsonEncode(a) == jsonEncode(b);
 
   Future<bool> _save(String key, Object value, {bool durable = true}) {
     _onDisk.add(key);

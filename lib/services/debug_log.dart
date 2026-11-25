@@ -197,12 +197,14 @@ class DebugLog {
     final h = XtifyAudioHandler.instance;
     final ps = h.playbackState.value;
     final cur = h.currentTrack;
+    final notes = Vault.instance.notices.value;
     final b = StringBuffer()
       ..writeln('Xtify debug info')
       ..writeln('Time: ${DateTime.now().toIso8601String()}')
       ..writeln('App: $_version')
       ..writeln('Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
       ..writeln('Encrypted storage: ${Vault.instance.summary}')
+      ..writeln('Storage notes: ${notes.isEmpty ? 'none' : notes.join(' | ')}')
       ..writeln('Saved logs: $_saving')
       ..writeln('Online: ${ConnectivityService.instance.online.value}')
       ..writeln('Signed in to YouTube: ${CookieService.instance.signedInListener.value}'

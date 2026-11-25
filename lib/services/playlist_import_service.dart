@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/track_model.dart';
+import 'data_merge.dart';
 import 'playlist_service.dart';
 import 'playlist_source.dart';
 import 'spotify_reader.dart';
@@ -143,28 +144,53 @@ class PlaylistImportService {
   bool _started = false;
   bool _running = false;
 
+  // Saved reports that this version cannot show, for example ones a newer
+  // version wrote. They stay in the saved list.
+  List<Map<String, dynamic>> _kept = <Map<String, dynamic>>[];
+
   Future<void> init() async {
     String? text;
+    var readable = true;
     try {
       final dir = await getApplicationSupportDirectory();
       final old = File('${dir.path}${Platform.pathSeparator}import_reports.json');
-      _started = true;
-      text = await Vault.instance.readTextOrMove(_vaultName, old, isValid: Vault.isJsonList);
-      if (text != null) {
+      text = await Vault.instance.readTextOrMove(
+        _vaultName,
+        old,
+        isValid: Vault.isJsonList,
+        merge: DataMerge.reports,
+      );
+    } catch (e) {
+      // Not knowing what is saved is not the same as nothing being saved, so
+      // nothing is saved over it.
+      debugPrint('import reports could not be fetched: $e');
+      readable = false;
+      Vault.instance.noteUnreadable('import reports');
+    }
+    if (text != null) {
+      try {
         final data = json.decode(text) as List<dynamic>;
         final loaded = <ImportJob>[];
+        final kept = <Map<String, dynamic>>[];
         for (final e in data) {
-          final job = ImportJob.fromJson(e as Map<String, dynamic>);
-          if (job != null) loaded.add(job);
+          final entry = e as Map<String, dynamic>;
+          final job = ImportJob.fromJson(entry);
+          if (job != null) {
+            loaded.add(job);
+          } else if (kept.length < _keepReports) {
+            kept.add(entry);
+          }
         }
+        _kept = kept;
         jobs.value = loaded;
-      }
-    } catch (e) {
-      debugPrint('import reports load failed: $e');
-      if (text != null) {
-        await Vault.instance.writeText('$_vaultName-unreadable', text);
+      } catch (e) {
+        // Saved data that cannot be read is never saved over.
+        debugPrint('import reports load failed: $e');
+        readable = false;
+        Vault.instance.noteUnreadable('import reports');
       }
     }
+    _started = readable;
   }
 
   int add(List<PlaylistLink> links) {
@@ -414,9 +440,15 @@ class PlaylistImportService {
     try {
       final finished = jobs.value.where((j) => !j.active).toList()
         ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+      final shown = finished.take(_keepReports).toList();
+      final ids = <Object?>{for (final j in shown) j.id};
       final saved = await Vault.instance.writeText(
         _vaultName,
-        json.encode(finished.take(_keepReports).map((j) => j.toJson()).toList()),
+        json.encode([
+          for (final j in shown) j.toJson(),
+          for (final m in _kept)
+            if (!ids.contains(m['id'])) m,
+        ]),
       );
       if (!saved) debugPrint('import reports save failed: the secure store is not available');
     } catch (e) {

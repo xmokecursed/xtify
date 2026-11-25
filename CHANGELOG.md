@@ -2,6 +2,21 @@
 All notable changes to **Xtify** are recorded here, newest first.
 ---
 
+## 3.5.2 - 2026-11-25
+
+**Fix** - Your data is kept when you switch between versions
+
+- Going back to an older version of Xtify and then updating again no longer throws away what you did in between. Before, the plain files the older version wrote were deleted at the next start, so a playlist you made or a song you favourited there was gone. Now playlists, favourites, the downloads list, import reports, play history, search history, artist counts and settings are merged with the saved ones: whatever either side has, you keep.
+- Versions older than 3.5.0 cannot read the encrypted files, so they show an empty library. Nothing is deleted when that happens. The encrypted files stay as they are, and when you update again everything is back, together with what you did in the older version.
+- Data written by a newer version of Xtify is never treated as damaged. It is not renamed, replaced or deleted, and a key file from a newer version never offers Start fresh. A notice at the top says that this data is left as it is and that changes to it are not saved until you update. If you would rather carry on with this version, Details has Set aside, which asks first and moves it into a separate folder.
+- Saved data that Xtify cannot read is no longer saved over with an empty copy. It is left as it is, a notice says so, and changes to it are not saved. Before, the empty copy replaced it and the old one was only kept aside. This includes a file that cannot be opened for a moment (for example while a virus scanner has it): it is tried again a few times, and if it still fails it is left alone until the next start.
+- Xtify only replaces its key when the key storage says clearly that the key is gone. A key that just cannot be opened this time (the key storage was busy, or a newer version wrote it) is kept where it is. If no saved data depends on it yet, this run keeps its data in plain files and takes them over once the key opens again.
+- If you signed in to YouTube again in an older version, that newer sign-in is used and the one it replaces is kept aside until your next sign-in or sign-out.
+- The downloads list keeps entries whose file cannot be found right now, for example on a memory card or drive that is not connected. Before, the next download or removal dropped them from the list for good. They come back by themselves when the file does, and the Downloads playlist keeps those songs in the meantime.
+- A plain log from 3.5.0 whose number clashes with an encrypted one is converted like any other old log instead of being wiped.
+- Settings and history from an older version are moved over one setting at a time, so a problem with one of them can never make another one be counted twice (play counts, for example).
+- Copy debug info has a new "Storage notes" line.
+
 ## 3.5.1 - 2026-11-23
 
 **Security** - The saved log is encrypted, and Xtify never sets your data aside on its own
