@@ -34,7 +34,7 @@ Commits: [`46a1208`](https://github.com/xmokecursed/xtify/commit/46a1208)
 - When the saved data cannot be opened, a notice at the top says so ("Saved data is locked. Nothing was deleted") and explains why. Only when the key storage says clearly that the key is gone does the notice offer Start fresh. After you confirm, it moves the old files into a separate folder (they are not deleted) and Xtify starts with an empty library at the next launch. Nothing is ever reset without that confirmation.
 - A key file that is missing while encrypted data exists is handled the same way, instead of creating a new key that would cut the data off.
 
-Commit: [`3b64a65`](https://github.com/xmokecursed/xtify/commit/3b64a65)
+Commits: [`3b64a65`](https://github.com/xmokecursed/xtify/commit/3b64a65)
 
 ## 3.5.0 - 2026-11-22
 
