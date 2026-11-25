@@ -17,6 +17,8 @@ All notable changes to **Xtify** are recorded here, newest first.
 - Settings and history from an older version are moved over one setting at a time, so a problem with one of them can never make another one be counted twice (play counts, for example).
 - Copy debug info has a new "Storage notes" line.
 
+Commits: [`46a1208`](https://github.com/xmokecursed/xtify/commit/46a1208)
+
 ## 3.5.1 - 2026-11-23
 
 **Security** - The saved log is encrypted, and Xtify never sets your data aside on its own
@@ -31,6 +33,8 @@ All notable changes to **Xtify** are recorded here, newest first.
 - Xtify no longer starts over by itself when it cannot open its key. In 3.5.0, after three starts in a row where the key storage said the saved key could not be opened (twelve where it did not answer), Xtify moved the saved data aside and began empty. A temporary glitch, or opening the app once as a different Windows user, could have triggered that. Now nothing is moved, deleted or replaced, and the data opens again as soon as the key does.
 - When the saved data cannot be opened, a notice at the top says so ("Saved data is locked. Nothing was deleted") and explains why. Only when the key storage says clearly that the key is gone does the notice offer Start fresh. After you confirm, it moves the old files into a separate folder (they are not deleted) and Xtify starts with an empty library at the next launch. Nothing is ever reset without that confirmation.
 - A key file that is missing while encrypted data exists is handled the same way, instead of creating a new key that would cut the data off.
+
+Commit: [`3b64a65`](https://github.com/xmokecursed/xtify/commit/3b64a65)
 
 ## 3.5.0 - 2026-11-22
 
